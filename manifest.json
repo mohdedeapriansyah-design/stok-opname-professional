@@ -1,0 +1,10 @@
+{
+  "name": "Stok Opname Professional",
+  "short_name": "Stok Opname",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f5f8fc",
+  "theme_color": "#0b5ed7",
+  "description": "Reconcile Automation dan Analisa Overstok",
+  "icons": []
+}

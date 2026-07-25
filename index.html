@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0b5ed7">
+  <meta name="description" content="Stok Opname - Reconcile Automation dan Analisa Overstok">
+  <title>Stok Opname v2.0</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <button id="menuToggle" class="icon-btn" aria-label="Buka menu" aria-expanded="false">☰</button>
+      <div class="brand">
+        <div class="brand-icon">✓</div>
+        <div>
+          <h1>Stok Opname</h1>
+          <span>Reconcile Automation & Stock Analysis</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="overlay" class="overlay"></div>
+
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-head">
+        <strong>Menu Aplikasi</strong>
+        <button id="menuClose" class="icon-btn light" aria-label="Tutup menu">×</button>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-page="dashboard">🏠 <span>Dashboard</span></button>
+        <button class="nav-item" data-page="reconcile">🔄 <span>Reconcile Automation</span></button>
+        <button class="nav-item" data-page="overstok">📊 <span>Analisa Overstok</span></button>
+        <button class="nav-item" data-page="history">🕘 <span>Riwayat Proses</span></button>
+        <button class="nav-item" data-page="about">ℹ️ <span>Tentang Aplikasi</span></button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <section id="page-dashboard" class="page active">
+        <div class="hero">
+          <div>
+            <span class="eyebrow">STOK OPNAME PROFESSIONAL</span>
+            <h2>Otomatisasi Komper & Analisa Stok</h2>
+            <p>Memudahkan proses rekonsiliasi hasil Stock Opname ke template Komper tanpa mengubah struktur file template asli.</p>
+            <button class="primary-btn" data-go="reconcile">Mulai Reconcile Automation →</button>
+          </div>
+          <div class="hero-mark">✓</div>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="info-card">
+            <div class="card-icon">🔄</div>
+            <h3>Reconcile Automation</h3>
+            <p>Upload satu template Komper dan banyak file hasil SO. Engine membaca kolom <b>productSapCode</b> dan <b>qtyFix</b> secara otomatis.</p>
+          </article>
+          <article class="info-card">
+            <div class="card-icon">📈</div>
+            <h3>Analisa Overstok</h3>
+            <p>Analisa nominal penjualan dan stok menggunakan rumus Juni + Juli × 1,5 dibandingkan dengan Target Agustus.</p>
+          </article>
+          <article class="info-card">
+            <div class="card-icon">📱</div>
+            <h3>Web & Android</h3>
+            <p>Tampilan responsif dan mendukung instalasi sebagai PWA sehingga dapat digunakan melalui browser maupun Android.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="page-reconcile" class="page">
+        <div class="page-title">
+          <div>
+            <span class="eyebrow">RECONCILE AUTOMATION</span>
+            <h2>Rekonsiliasi Stock Opname</h2>
+            <p>Template Komper asli tidak diubah. Hanya nilai QtyFix yang dipetakan ke kolom Qty pada hasil salinan.</p>
+          </div>
+        </div>
+
+        <div class="workflow">
+          <div class="step"><b>1</b><span>Upload Template Komper</span></div>
+          <div class="step"><b>2</b><span>Upload Banyak File SO</span></div>
+          <div class="step"><b>3</b><span>Engine Baca QtyFix</span></div>
+          <div class="step"><b>4</b><span>Download Hasil</span></div>
+        </div>
+
+        <div class="two-col">
+          <article class="panel">
+            <div class="panel-head">
+              <h3>File Template Komper</h3>
+              <span class="badge">WAJIB</span>
+            </div>
+            <label class="dropzone" for="templateFile">
+              <span class="upload-icon">📄</span>
+              <strong>Klik untuk memilih file</strong>
+              <small>Format XLSX / XLS / CSV</small>
+              <input id="templateFile" type="file" accept=".xlsx,.xls,.csv">
+            </label>
+            <div id="templateInfo" class="file-info empty">Belum ada template</div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h3>File Hasil SO</h3>
+              <span class="badge">BANYAK FILE</span>
+            </div>
+            <label class="dropzone" for="soFiles">
+              <span class="upload-icon">📚</span>
+              <strong>Klik untuk memilih banyak file</strong>
+              <small>Semua file SO akan diproses otomatis</small>
+              <input id="soFiles" type="file" accept=".xlsx,.xls,.csv" multiple>
+            </label>
+            <div id="soFileList" class="file-list empty">Belum ada file SO</div>
+          </article>
+        </div>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Proses Reconcile</h3>
+              <p class="muted">Engine akan mencari SAP Code dan QtyFix secara dinamis.</p>
+            </div>
+            <button id="btnProcess" class="primary-btn">⚙️ Proses Otomatis</button>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-bar"><div id="progressBar"></div></div>
+            <span id="statusText">Menunggu file...</span>
+          </div>
+        </article>
+
+        <article id="resultPanel" class="panel hidden">
+          <div class="panel-head">
+            <div>
+              <h3>Hasil Rekonsiliasi</h3>
+              <p id="resultSummary" class="muted"></p>
+            </div>
+            <div class="action-row">
+              <button id="btnPreview" class="secondary-btn">👁 Preview</button>
+              <button id="btnDownload" class="primary-btn">⬇ Download Hasil</button>
+            </div>
+          </div>
+          <div class="stats-grid">
+            <div class="stat"><span>SKU Template</span><b id="statTemplate">0</b></div>
+            <div class="stat"><span>SKU SO Terbaca</span><b id="statSO">0</b></div>
+            <div class="stat"><span>SKU Terisi</span><b id="statMatched">0</b></div>
+            <div class="stat"><span>Tidak Ditemukan</span><b id="statNotFound">0</b></div>
+          </div>
+          <div id="notFoundBox" class="warning-box hidden"></div>
+        </article>
+      </section>
+
+      <section id="page-overstok" class="page">
+        <div class="page-title">
+          <div>
+            <span class="eyebrow">ANALISA OVERSTOK</span>
+            <h2>Analisa Potensi Stok</h2>
+            <p>Masukkan nominal hasil omset Juni, Juli, dan Target Agustus. Sistem menghitung batas potensi stok secara otomatis.</p>
+          </div>
+        </div>
+
+        <article class="panel">
+          <div class="form-grid">
+            <label>Hasil Omset Juni
+              <input id="omsetJuni" type="number" min="0" step="1" placeholder="Contoh: 50000000">
+            </label>
+            <label>Hasil Omset Juli
+              <input id="omsetJuli" type="number" min="0" step="1" placeholder="Contoh: 60000000">
+            </label>
+            <label>Target Agustus
+              <input id="targetAgustus" type="number" min="0" step="1" placeholder="Contoh: 100000000">
+            </label>
+            <label>Faktor Analisa
+              <input id="faktorOverstok" type="number" min="0" step="0.1" value="1.5">
+            </label>
+          </div>
+          <button id="btnAnalisa" class="primary-btn">📊 Jalankan Analisa</button>
+        </article>
+
+        <div id="overstokResult" class="analysis-result hidden">
+          <div class="stats-grid">
+            <div class="stat"><span>Total Omset Juni + Juli</span><b id="totalOmset">Rp0</b></div>
+            <div class="stat"><span>Potensi Stok (× Faktor)</span><b id="potensiStok">Rp0</b></div>
+            <div class="stat"><span>Target Agustus</span><b id="targetResult">Rp0</b></div>
+            <div class="stat"><span>Selisih</span><b id="selisihResult">Rp0</b></div>
+          </div>
+          <div id="statusOverstok" class="status-result"></div>
+        </div>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Data Banyak / Lebih dari 6</h3>
+              <p class="muted">Tempel atau masukkan data dengan kolom Kode SAP, Nama, dan Qty. Sistem menampilkan data dengan Qty &gt; 6.</p>
+            </div>
+          </div>
+          <textarea id="bulkData" rows="7" placeholder="Kode SAP | Nama Produk | Qty
+100001 | Contoh Produk A | 7
+100002 | Contoh Produk B | 3"></textarea>
+          <button id="btnFilterQty" class="secondary-btn">🔎 Analisa Qty &gt; 6</button>
+          <div id="qtyAnalysisResult" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section id="page-history" class="page">
+        <div class="page-title"><div><span class="eyebrow">RIWAYAT</span><h2>Riwayat Proses</h2><p>Riwayat proses tersimpan di perangkat ini.</p></div><button id="btnClearHistory" class="danger-btn">Hapus Riwayat</button></div>
+        <div id="historyList" class="history-list"></div>
+      </section>
+
+      <section id="page-about" class="page">
+        <div class="page-title"><div><span class="eyebrow">TENTANG APLIKASI</span><h2>Stok Opname</h2></div></div>
+        <article class="panel about">
+          <h3>Memudahkan Komper Otomatis</h3>
+          <p>Aplikasi ini dirancang untuk membantu proses Stock Opname dan rekonsiliasi data secara cepat. Pengguna dapat memasukkan template Komper, memilih banyak file hasil SO, kemudian engine membaca kode SAP dan QtyFix secara otomatis.</p>
+          <ul>
+            <li>Template asli tidak ditimpa atau diubah.</li>
+            <li>Nilai desimal seperti 3.0 dinormalisasi menjadi 3.</li>
+            <li>File SO dapat lebih dari satu dan dapat memiliki banyak sheet.</li>
+            <li>Pencarian header dilakukan secara dinamis.</li>
+            <li>Hasil dapat di-preview dan di-download.</li>
+            <li>Berjalan responsif di web dan Android melalui PWA.</li>
+          </ul>
+        </article>
+      </section>
+    </main>
+
+    <div id="previewModal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-head"><h3>Preview Hasil</h3><button id="btnClose" class="icon-btn">×</button></div>
+        <div id="previewContent" class="table-wrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="js/file-engine.js"></script>
+  <script src="js/reconcile-engine.js"></script>
+  <script src="js/export-engine.js"></script>
+  <script src="js/storage-engine.js"></script>
+  <script src="js/overstok-engine.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
