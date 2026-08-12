@@ -1,3 +1,8 @@
+
+## V6 FIX Freeze
+- Excel parsing is limited to 10,000 rows to prevent 1,048,576-row formatting artifacts from freezing the browser.
+- Template and SO parsing remains based on actual populated cells.
+- SAP matching remains the primary key.
 # STOK OPNAME PROFESSIONAL
 
 Aplikasi web responsif untuk Reconcile Automation dan Analisa Overstok.

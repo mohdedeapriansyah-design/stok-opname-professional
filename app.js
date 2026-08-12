@@ -203,7 +203,8 @@
               cellFormula: true,
               cellNF: false,
               cellStyles: false,
-              cellHTML: false
+              cellHTML: false,
+              sheetRows: 10000
             }
           );
 
