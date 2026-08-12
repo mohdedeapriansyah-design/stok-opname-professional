@@ -45,19 +45,31 @@ Kolom formula lain tidak disentuh oleh engine.
 
 ## Analisa Overstok
 
-Rumus:
+Data diambil **per brand** (misalnya Wardah, tidak digabung dengan brand lain).
 
-`(Omset Juni + Omset Juli) × Faktor`
+Rumus yang digunakan:
 
-Faktor default:
+`((Nominal stok bulan 1 + Nominal stok bulan 2) × 2) ÷ Omset bulan 3`
 
-`1.5`
+Hasil dikonversi menjadi persentase:
 
-Jika hasil lebih besar dari Target Agustus:
+`Rasio = ((Stok B1 + Stok B2) × 2 / Omset B3) × 100%`
+
+Jika rasio lebih besar dari target rasio:
 `OVERSTOK`
 
-Jika hasil sama atau lebih kecil:
+Jika rasio sama atau lebih kecil:
 `AMAN`
+
+Target default:
+`100%`
+
+## Perbaikan performa
+
+- Pembacaan Excel tidak lagi memuat `cellStyles` dan `cellNF` yang berat.
+- Proses file besar memberi kesempatan browser bernapas setiap beberapa ribu baris agar UI tidak terasa hang/freeze.
+- Download XLSX dibuat sebagai Blob secara asynchronous, bukan `XLSX.writeFile()` langsung.
+- Data overstok dihitung terpisah per brand.
 
 ## Menjalankan
 
@@ -74,3 +86,6 @@ Untuk penggunaan Android/PWA, aplikasi sebaiknya dijalankan melalui HTTPS saat s
 Aplikasi menggunakan SheetJS melalui CDN pada `index.html`. Karena itu proses pembacaan XLSX membutuhkan koneksi internet saat library belum tersedia secara lokal.
 
 Untuk produksi offline penuh, simpan `xlsx.full.min.js` ke folder `js` lalu ubah pemanggilan CDN menjadi file lokal.
+
+
+FIX V5: Rekonsiliasi menggunakan productSapCode sebagai kunci utama. Untuk Template Komper lama yang tidak memiliki kolom Kode SAP, productOdooCode dipakai hanya sebagai bridge yang berasal dari pasangan SAP-Odoo pada file SO. Kolom HASIL SO diisi langsung dan pembacaan sheet dibatasi ke sel yang benar-benar berisi data untuk mengurangi lag.

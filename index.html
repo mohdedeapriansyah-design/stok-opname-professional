@@ -154,57 +154,61 @@
         <div class="page-title">
           <div>
             <span class="eyebrow">ANALISA OVERSTOK</span>
-            <h2>Analisa Potensi Stok</h2>
-            <p>Masukkan nominal hasil omset Juni, Juli, dan Target Agustus. Sistem menghitung batas potensi stok secara otomatis.</p>
+            <h2>Analisa Overstok per Brand</h2>
+            <p>Rumus: <b>((Stok nominal bulan 1 + Stok nominal bulan 2) × 2) ÷ Omset bulan 3</b>. Data dihitung terpisah untuk setiap brand, misalnya Wardah, dan dibandingkan dengan target rasio.</p>
           </div>
         </div>
 
         <article class="panel">
           <div class="form-grid">
-            <label>Hasil Omset Juni
-              <input id="omsetJuni" type="number" min="0" step="1" placeholder="Contoh: 50000000">
+            <label>Brand
+              <input id="brandOverstok" type="text" placeholder="Contoh: Wardah">
             </label>
-            <label>Hasil Omset Juli
-              <input id="omsetJuli" type="number" min="0" step="1" placeholder="Contoh: 60000000">
+            <label>Nominal Stok Bulan 1
+              <input id="stokBulan1" type="number" min="0" step="1" placeholder="Contoh: 10000000">
             </label>
-            <label>Target Agustus
-              <input id="targetAgustus" type="number" min="0" step="1" placeholder="Contoh: 100000000">
+            <label>Nominal Stok Bulan 2
+              <input id="stokBulan2" type="number" min="0" step="1" placeholder="Contoh: 12000000">
             </label>
-            <label>Faktor Analisa
-              <input id="faktorOverstok" type="number" min="0" step="0.1" value="1.5">
+            <label>Omset Bulan 3
+              <input id="omsetBulan3" type="number" min="0" step="1" placeholder="Contoh: 25000000">
+            </label>
+            <label>Target Rasio (%)
+              <input id="targetRasio" type="number" min="0" step="0.1" value="100" placeholder="100">
             </label>
           </div>
-          <button id="btnAnalisa" class="primary-btn">📊 Jalankan Analisa</button>
+          <div class="action-row" style="margin-top:12px">
+            <button id="btnTambahBrand" class="secondary-btn">＋ Tambah Brand</button>
+            <button id="btnAnalisa" class="primary-btn">📊 Hitung Semua Brand</button>
+            <button id="btnClearBrand" class="danger-btn">Bersihkan Data</button>
+          </div>
+          <p class="muted">Setiap brand dihitung sendiri. Contoh: Wardah tidak digabung dengan brand lain.</p>
         </article>
 
         <div id="overstokResult" class="analysis-result hidden">
           <div class="stats-grid">
-            <div class="stat"><span>Total Omset Juni + Juli</span><b id="totalOmset">Rp0</b></div>
-            <div class="stat"><span>Potensi Stok (× Faktor)</span><b id="potensiStok">Rp0</b></div>
-            <div class="stat"><span>Target Agustus</span><b id="targetResult">Rp0</b></div>
-            <div class="stat"><span>Selisih</span><b id="selisihResult">Rp0</b></div>
+            <div class="stat"><span>Jumlah Brand</span><b id="totalBrand">0</b></div>
+            <div class="stat"><span>Brand Overstok</span><b id="jumlahOverstok">0</b></div>
+            <div class="stat"><span>Brand Aman</span><b id="jumlahAman">0</b></div>
+            <div class="stat"><span>Target Rasio</span><b id="targetResult">100%</b></div>
           </div>
-          <div id="statusOverstok" class="status-result"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Brand</th>
+                  <th>Stok B1</th>
+                  <th>Stok B2</th>
+                  <th>Omset B3</th>
+                  <th>Rumus</th>
+                  <th>Rasio</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="overstokTableBody"></tbody>
+            </table>
+          </div>
         </div>
-
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <h3>Data Banyak / Lebih dari 6</h3>
-              <p class="muted">Tempel atau masukkan data dengan kolom Kode SAP, Nama, dan Qty. Sistem menampilkan data dengan Qty &gt; 6.</p>
-            </div>
-          </div>
-          <textarea id="bulkData" rows="7" placeholder="Kode SAP | Nama Produk | Qty
-100001 | Contoh Produk A | 7
-100002 | Contoh Produk B | 3"></textarea>
-          <button id="btnFilterQty" class="secondary-btn">🔎 Analisa Qty &gt; 6</button>
-          <div id="qtyAnalysisResult" class="table-wrap"></div>
-        </article>
-      </section>
-
-      <section id="page-history" class="page">
-        <div class="page-title"><div><span class="eyebrow">RIWAYAT</span><h2>Riwayat Proses</h2><p>Riwayat proses tersimpan di perangkat ini.</p></div><button id="btnClearHistory" class="danger-btn">Hapus Riwayat</button></div>
-        <div id="historyList" class="history-list"></div>
       </section>
 
       <section id="page-about" class="page">
