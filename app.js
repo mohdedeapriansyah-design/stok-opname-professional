@@ -1,309 +1,229 @@
 (() => {
   "use strict";
-
-  const $ = (id) => document.getElementById(id);
-  const state = {
-    templateFile: null,
-    soFiles: [],
-    templateWorkbook: null,
-    templateSheetName: null,
-    resultWorkbook: null,
-    missingRows: [],
-    lastResult: null
-  };
+  const $ = id => document.getElementById(id);
+  const state = { templateFile:null, soFiles:[], templateWorkbook:null, resultWorkbook:null, missingRows:[], lastResult:null };
 
   const aliases = {
-    odoo: ["productodooCode","odooCode","odooProductCode","kodeOdoo","kodeOdooProduk"],
-    sap: ["productsapCode","sapCode","kodeSAP","kodeSap","materialCode","material"],
-    item: ["kodeItem","kodeBarang","itemCode","item","sku","productCode","productSapCode","productOdooCode"],
-    name: ["productName","namaProduk","productNama","description","namaBarang","product"],
-    qty: ["qtyFix","qty","quantity","qtySO","qtyOpname","hasilSO","stockQty","countQty"]
+    odoo:["productodooCode","productOdooCode","odooCode","odooProductCode","kodeOdoo","kodeOdooProduk"],
+    sap:["productSapCode","productsapcode","sapCode","kodeSAP","kodeSap","materialCode","material"],
+    item:["kodeItem","kodeBarang","itemCode","item","sku","productCode","kodeproduk"],
+    name:["productName","namaProduk","productNama","description","namaBarang","product"],
+    qty:["qtyFix","qtyfix","qty","quantity","qtySO","qtyOpname","hasilSO","stockQty","countQty"]
   };
 
-  function norm(v) {
-    return String(v ?? "").trim().toLowerCase().replace(/[\s_\-./()]+/g, "");
-  }
-
-  function numericKey(v) {
+  const norm = v => String(v ?? "").trim().toLowerCase().replace(/[\s_\-./()]+/g, "");
+  const numericKey = v => {
     if (v === null || v === undefined || v === "") return "";
-    const s = String(v).trim().replace(/\.0+$/,"").replace(/\s/g,"");
-    return s.replace(/^0+/, "") || "0";
-  }
+    const s = String(v).trim().replace(/,/g, "").replace(/\.0+$/, "").replace(/\s/g, "");
+    return /^\d+$/.test(s) ? (s.replace(/^0+/, "") || "0") : s.toLowerCase();
+  };
+  const qtyNumber = v => {
+    if (v === null || v === undefined || v === "") return null;
+    const n = Number(String(v).replace(/,/g, "").trim());
+    return Number.isFinite(n) ? n : null;
+  };
 
-  function findHeader(row, type) {
+  function findHeader(rows, type, preferredRow=null) {
     const wanted = new Set(aliases[type].map(norm));
-    for (let i = 0; i < row.length; i++) {
-      if (wanted.has(norm(row[i]))) return i;
+    const max = Math.min(rows.length, 40);
+    if (preferredRow !== null && rows[preferredRow]) {
+      for (let c=0;c<rows[preferredRow].length;c++) if (wanted.has(norm(rows[preferredRow][c]))) return {rowIndex:preferredRow,colIndex:c};
     }
-    return -1;
+    for (let r=0;r<max;r++) for (let c=0;c<(rows[r]||[]).length;c++) if (wanted.has(norm(rows[r][c]))) return {rowIndex:r,colIndex:c};
+    return null;
+  }
+  function findExact(rows, names, preferredRow=null) {
+    const wanted = new Set(names.map(norm));
+    const scan = preferredRow !== null ? [preferredRow] : Array.from({length:Math.min(rows.length,40)},(_,i)=>i);
+    for (const r of scan) {
+      const row = rows[r] || [];
+      for (let c=0;c<row.length;c++) if (wanted.has(norm(row[c]))) return {rowIndex:r,colIndex:c};
+    }
+    return null;
+  }
+  function actualRange(ws){
+    const ref=ws["!ref"] || "A1:A1";
+    const base=XLSX.utils.decode_range(ref);
+    let maxR=base.s.r, maxC=base.s.c;
+    for(const key of Object.keys(ws)){
+      if(key[0]==="!") continue;
+      const m=/^([A-Z]+)(\d+)$/.exec(key);
+      if(!m) continue;
+      const r=Number(m[2])-1, c=XLSX.utils.decode_col(m[1]);
+      const cell=ws[key];
+      if(cell && (cell.v!==undefined || cell.f!==undefined)) { if(r>maxR)maxR=r; if(c>maxC)maxC=c; }
+    }
+    return {s:{r:base.s.r,c:base.s.c},e:{r:maxR,c:maxC}};
+  }
+  function rowsFromSheet(ws) {
+    return XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true,range:actualRange(ws)});
   }
 
-  function findHeaderInRows(rows, type) {
-    const limit = Math.min(rows.length, 30);
-    for (let r = 0; r < limit; r++) {
-      const idx = findHeader(rows[r], type);
-      if (idx >= 0) return { rowIndex: r, colIndex: idx };
+  async function readWorkbook(file){
+    const data=await file.arrayBuffer();
+    return XLSX.read(data,{type:"array",cellFormula:true,cellStyles:true,cellNF:true});
+  }
+
+  function showToast(msg){ const e=$("toast"); e.textContent=msg; e.classList.add("show"); clearTimeout(showToast.t); showToast.t=setTimeout(()=>e.classList.remove("show"),3200); }
+  function setStatus(text,type="neutral") { $("statusText").textContent=text; $("engineState").className="status-pill "+type; $("engineState").textContent=type==="success"?"Selesai":type==="error"?"Error":"Proses"; }
+  function progress(n){ $("progressBar").style.width=Math.max(0,Math.min(100,n))+"%"; }
+
+  function templateIndexes(wb){
+    const all=[];
+    for(const sheetName of wb.SheetNames){
+      const ws=wb.Sheets[sheetName];
+      const rows=rowsFromSheet(ws);
+      if(!rows.length) continue;
+      const item=findHeader(rows,"item");
+      const odoo=findHeader(rows,"odoo");
+      const sap=findHeader(rows,"sap");
+      const name=findHeader(rows,"name");
+      // Source quantity is qtyFix/quantity. Destination must be the explicit HASIL SO column.
+      const hasil=findExact(rows,["HASIL SO","HASIL_STOK_OPNAME","HASILSO"]);
+      const qtySource=findHeader(rows,"qty");
+      // Only treat a sheet as product data when it has a code column and a plausible header row.
+      const code=item||odoo||sap;
+      if(!code) continue;
+      const headerRow=code.rowIndex;
+      const targetHeader=hasil && hasil.rowIndex===headerRow ? hasil : null;
+      const targetCol=targetHeader ? targetHeader.colIndex : 4; // fallback to historical column E
+      const entry={sheetName,ws,rows,headerRow,itemCol:item?.colIndex??-1,odooCol:odoo?.colIndex??-1,sapCol:sap?.colIndex??-1,nameCol:name?.colIndex??-1,targetCol, map:new Map()};
+      for(let r=headerRow+1;r<rows.length;r++){
+        const row=rows[r]||[];
+        const keys=[];
+        if(entry.odooCol>=0){const k=numericKey(row[entry.odooCol]); if(k) keys.push(["odoo",k]);}
+        if(entry.sapCol>=0){const k=numericKey(row[entry.sapCol]); if(k) keys.push(["sap",k]);}
+        if(entry.itemCol>=0){const k=numericKey(row[entry.itemCol]); if(k) keys.push(["item",k]);}
+        for(const [kind,key] of keys){ if(!entry.map.has(kind+":"+key)) entry.map.set(kind+":"+key,{row:r,score:1}); }
+      }
+      all.push(entry);
+    }
+    return all;
+  }
+
+  function globalTemplateMap(indexes){
+    const maps={odoo:new Map(),sap:new Map(),item:new Map()};
+    for(const idx of indexes){
+      for(const [compound,val] of idx.map.entries()){
+        const [kind,key]=compound.split(":");
+        if(!maps[kind].has(key)) maps[kind].set(key,[]);
+        maps[kind].get(key).push({idx,row:val.row});
+      }
+    }
+    return maps;
+  }
+
+  function findCandidate(x,maps){
+    for(const kind of ["odoo","sap","item"]){
+      const k=numericKey(x[kind]);
+      if(k && maps[kind].has(k)) return maps[kind].get(k)[0];
+    }
+    // SAP may be 4000005880 while template has 5880.
+    const sap=numericKey(x.sap);
+    if(/^\d+$/.test(sap) && sap.length>4){
+      const suffix=numericKey(sap.slice(-6));
+      if(maps.item.has(suffix)) return maps.item.get(suffix)[0];
     }
     return null;
   }
 
-  function rowsFromSheet(ws) {
-    return XLSX.utils.sheet_to_json(ws, {header:1, defval:"", raw:true});
-  }
-
-  function cloneWorkbook(wb) {
-    // SheetJS creates a separate workbook when reading/writing.
-    // The original uploaded file is never modified.
-    return XLSX.read(XLSX.write(wb,{bookType:"xlsx",type:"array"}), {type:"array", cellFormula:true, cellStyles:true});
-  }
-
-  function showToast(msg) {
-    const el = $("toast"); el.textContent = msg; el.classList.add("show");
-    clearTimeout(showToast.t); showToast.t = setTimeout(() => el.classList.remove("show"), 3200);
-  }
-
-  function setStatus(text, type="neutral") {
-    $("statusText").textContent = text;
-    $("engineState").className = "status-pill " + type;
-    $("engineState").textContent = type === "success" ? "Selesai" : type === "error" ? "Error" : "Proses";
-  }
-
-  function progress(n) { $("progressBar").style.width = Math.max(0,Math.min(100,n)) + "%"; }
-
-  async function readWorkbook(file) {
-    const data = await file.arrayBuffer();
-    return XLSX.read(data, {type:"array", cellFormula:true, cellStyles:true, cellNF:true});
-  }
-
-  function firstSheet(wb) { return wb.SheetNames[0]; }
-
-  function getTemplateIndex(rows) {
-    const header = findHeaderInRows(rows,"item") || findHeaderInRows(rows,"odoo") || findHeaderInRows(rows,"sap");
-    const odoo = findHeaderInRows(rows,"odoo");
-    const sap = findHeaderInRows(rows,"sap");
-    const item = findHeaderInRows(rows,"item");
-    return {header, odoo, sap, item};
-  }
-
-  function buildTemplateMaps(rows) {
-    const h = getTemplateIndex(rows);
-    if (!h.header) throw new Error("Header Kode Item/Odoo/SAP tidak ditemukan pada template.");
-    const headerRow = h.header.rowIndex;
-    const maps = {odoo:new Map(), sap:new Map(), item:new Map()};
-    const itemCol = h.item?.colIndex ?? -1;
-    const odooCol = h.odoo?.colIndex ?? -1;
-    const sapCol = h.sap?.colIndex ?? -1;
-
-    for (let r = headerRow + 1; r < rows.length; r++) {
-      const row = rows[r] || [];
-      const item = itemCol >= 0 ? numericKey(row[itemCol]) : "";
-      const odoo = odooCol >= 0 ? numericKey(row[odooCol]) : "";
-      const sap = sapCol >= 0 ? numericKey(row[sapCol]) : "";
-      if (item) maps.item.set(item, r);
-      if (odoo) maps.odoo.set(odoo, r);
-      if (sap) maps.sap.set(sap, r);
-    }
-    return {headerRow, itemCol, maps};
-  }
-
-  function findTargetRow(code, maps) {
-    const key = numericKey(code);
-    if (!key) return -1;
-    if (maps.odoo.has(key)) return maps.odoo.get(key);
-    if (maps.sap.has(key)) return maps.sap.get(key);
-    if (maps.item.has(key)) return maps.item.get(key);
-
-    // Safe SAP -> Kode Item fallback:
-    // only accept suffix when it matches exactly one template item.
-    if (/^\d+$/.test(key) && key.length > 4) {
-      const suffix = key.replace(/^0+/, "");
-      const candidates = [];
-      for (const [item, row] of maps.item.entries()) {
-        if (item === suffix || key.endsWith(item)) candidates.push(row);
-      }
-      if (candidates.length === 1) return candidates[0];
-    }
-    return -1;
-  }
-
-  function parseSO(wb) {
-    const output = [];
-    for (const sheetName of wb.SheetNames) {
-      const rows = rowsFromSheet(wb.Sheets[sheetName]);
-      if (!rows.length) continue;
-      const hOdoo = findHeaderInRows(rows,"odoo");
-      const hSap = findHeaderInRows(rows,"sap");
-      const hItem = findHeaderInRows(rows,"item");
-      const hName = findHeaderInRows(rows,"name");
-      const hQty = findHeaderInRows(rows,"qty");
-      if (!hQty) continue;
-      const headerRow = Math.max(hQty.rowIndex, hOdoo?.rowIndex ?? 0, hSap?.rowIndex ?? 0, hItem?.rowIndex ?? 0);
-      for (let r = headerRow + 1; r < rows.length; r++) {
-        const row = rows[r] || [];
-        const qtyRaw = hQty.colIndex >= 0 ? row[hQty.colIndex] : "";
-        if (qtyRaw === "" || qtyRaw === null || qtyRaw === undefined) continue;
-        const qty = Number(String(qtyRaw).replace(/,/g,""));
-        if (!Number.isFinite(qty)) continue;
-        output.push({
-          odoo: hOdoo ? row[hOdoo.colIndex] : "",
-          sap: hSap ? row[hSap.colIndex] : "",
-          item: hItem ? row[hItem.colIndex] : "",
-          name: hName ? row[hName.colIndex] : "",
-          qty,
-          source: sheetName
-        });
+  function parseSO(wb){
+    const out=[];
+    for(const sheetName of wb.SheetNames){
+      const rows=rowsFromSheet(wb.Sheets[sheetName]);
+      if(!rows.length) continue;
+      const odoo=findHeader(rows,"odoo"), sap=findHeader(rows,"sap"), item=findHeader(rows,"item"), name=findHeader(rows,"name"), qty=findHeader(rows,"qty");
+      if(!qty) continue;
+      const headerRow=Math.max(qty.rowIndex,odoo?.rowIndex??0,sap?.rowIndex??0,item?.rowIndex??0);
+      for(let r=headerRow+1;r<rows.length;r++){
+        const row=rows[r]||[]; const q=qtyNumber(row[qty.colIndex]); if(q===null) continue;
+        const o=odoo?row[odoo.colIndex]:"", s=sap?row[sap.colIndex]:"", i=item?row[item.colIndex]:"";
+        if(!numericKey(o)&&!numericKey(s)&&!numericKey(i)) continue;
+        out.push({odoo:o,sap:s,item:i,name:name?row[name.colIndex]:"",qty:q,source:sheetName});
       }
     }
-    return output;
+    return out;
   }
 
-  function setCellValue(ws, row, col, value) {
-    const addr = XLSX.utils.encode_cell({r:row,c:col});
-    if (!ws[addr]) ws[addr] = {t:"n",v:value};
-    else { ws[addr].v = value; ws[addr].t = "n"; }
+  function setCell(ws,r,c,value){
+    const addr=XLSX.utils.encode_cell({r,c});
+    const old=ws[addr];
+    if(old){ old.v=value; old.t="n"; if(old.f) delete old.f; }
+    else ws[addr]={t:"n",v:value};
   }
 
-  function detectQtyColumn(rows, headerRow) {
-    const direct = findHeaderInRows(rows,"qty");
-    return direct && direct.rowIndex === headerRow ? direct.colIndex : (direct?.colIndex ?? -1);
+  function cloneWorkbook(wb){
+    const bytes=XLSX.write(wb,{bookType:"xlsx",type:"array",compression:true});
+    return XLSX.read(bytes,{type:"array",cellFormula:true,cellStyles:true,cellNF:true});
   }
 
-  function processReconcile() {
-    if (!state.templateWorkbook) throw new Error("Template belum dipilih.");
-    if (!state.soFiles.length) throw new Error("File SO belum dipilih.");
-
-    progress(5); setStatus("Membaca template...");
-    const templateSheet = state.templateSheetName;
-    const ws = state.templateWorkbook.Sheets[templateSheet];
-    const rows = rowsFromSheet(ws);
-    const ti = buildTemplateMaps(rows);
-    const qtyCol = detectQtyColumn(rows, ti.headerRow);
-
-    // Preferred target column: an existing Qty/hasil SO column. If absent, use column E (4),
-    // matching the historical Komper requirement.
-    const targetCol = qtyCol >= 0 ? qtyCol : 4;
-    const soRows = [];
-    for (let i=0; i<state.soFiles.length; i++) {
-      progress(10 + Math.round((i/state.soFiles.length)*35));
-      const wb = state.soFiles[i];
-      soRows.push(...parseSO(wb));
+  async function processReconcile(){
+    if(!state.templateWorkbook) throw Error("Template belum dipilih.");
+    if(!state.soFiles.length) throw Error("File SO belum dipilih.");
+    progress(3); setStatus("Membaca semua sheet template...");
+    const workWorkbook=cloneWorkbook(state.templateWorkbook);
+    const indexes=templateIndexes(workWorkbook);
+    if(!indexes.length) throw Error("Tidak ditemukan sheet template yang memiliki Kode Item/Odoo/SAP.");
+    const maps=globalTemplateMap(indexes);
+    progress(20);
+    const allSO=[];
+    for(let i=0;i<state.soFiles.length;i++){
+      setStatus(`Membaca file SO ${i+1}/${state.soFiles.length}...`);
+      const wb=await readWorkbook(state.soFiles[i]);
+      allSO.push(...parseSO(wb));
+      progress(20+Math.round(((i+1)/state.soFiles.length)*25));
+      await new Promise(r=>setTimeout(r,0));
     }
+    if(!allSO.length) throw Error("Tidak menemukan data SO dengan header Qty Fix/Quantity.");
 
-    progress(50); setStatus("Mencocokkan Odoo / SAP / Kode Item...");
-    const missing = [];
-    let matched = 0, qtyWritten = 0;
-    for (let i=0; i<soRows.length; i++) {
-      const x = soRows[i];
-      const row = findTargetRow(x.odoo, ti.maps);
-      const finalRow = row >= 0 ? row : findTargetRow(x.sap, ti.maps);
-      const finalRow2 = finalRow >= 0 ? finalRow : findTargetRow(x.item, ti.maps);
-      if (finalRow2 < 0) {
-        missing.push(x); continue;
-      }
-      setCellValue(ws, finalRow2, targetCol, x.qty);
-      matched++; qtyWritten += x.qty;
-      if (i % 250 === 0) progress(50 + Math.round((i/Math.max(1,soRows.length))*45));
+    // Aggregate by matched template cell. This prevents the last file from overwriting previous SO files.
+    const totals=new Map(); const missing=[];
+    for(const x of allSO){
+      const c=findCandidate(x,maps);
+      if(!c){ missing.push(x); continue; }
+      const key=c.idx.sheetName+"!"+c.row;
+      const prev=totals.get(key);
+      if(prev) prev.qty+=x.qty;
+      else totals.set(key,{idx:c.idx,row:c.row,qty:x.qty});
     }
-
-    progress(98); setStatus("Membuat file hasil...");
-    state.resultWorkbook = cloneWorkbook(state.templateWorkbook);
-    // Re-apply the modified worksheet to the cloned workbook so the downloaded workbook contains the edits.
-    state.resultWorkbook.Sheets[templateSheet] = ws;
-    state.missingRows = missing;
-    state.lastResult = {total:soRows.length, matched, missing:missing.length, qtyWritten};
-    $("totalSo").textContent = soRows.length.toLocaleString("id-ID");
-    $("matched").textContent = matched.toLocaleString("id-ID");
-    $("notFound").textContent = missing.length.toLocaleString("id-ID");
-    $("qtyWritten").textContent = qtyWritten.toLocaleString("id-ID");
-    $("downloadBtn").disabled = false;
-    $("downloadMissingBtn").disabled = missing.length === 0;
-    $("resultState").className = "status-pill success";
-    $("resultState").textContent = "Berhasil";
-    progress(100); setStatus("Selesai. Hasil berada di salinan template.", "success");
-    saveHistory(state.lastResult);
-    showToast("Rekonsiliasi selesai.");
+    progress(50); setStatus("Menulis Qty ke kolom HASIL SO...");
+    let qtyWritten=0;
+    for(const t of totals.values()){
+      setCell(t.idx.ws,t.row,t.idx.targetCol,t.qty);
+      qtyWritten+=t.qty;
+    }
+    // Work only on a cloned workbook. The uploaded template remains untouched in memory.
+    state.resultWorkbook=workWorkbook;
+    state.missingRows=missing;
+    state.lastResult={total:allSO.length,matched:allSO.length-missing.length,missing:missing.length,qtyWritten,matchedCells:totals.size,sheets:indexes.length};
+    $("totalSo").textContent=allSO.length.toLocaleString("id-ID");
+    $("matched").textContent=(allSO.length-missing.length).toLocaleString("id-ID");
+    $("notFound").textContent=missing.length.toLocaleString("id-ID");
+    $("qtyWritten").textContent=qtyWritten.toLocaleString("id-ID");
+    $("downloadBtn").disabled=false; $("downloadMissingBtn").disabled=!missing.length;
+    $("resultState").className="status-pill success"; $("resultState").textContent="Berhasil";
+    progress(100); setStatus(`Selesai · ${indexes.length} sheet template · ${totals.size.toLocaleString("id-ID")} item terisi`,"success");
+    saveHistory(state.lastResult); showToast("Hasil siap di-download.");
   }
 
-  function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename; a.rel = "noopener";
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  function downloadBlob(blob,name){ const u=URL.createObjectURL(blob),a=document.createElement("a"); a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000); }
+  function downloadResult(){ if(!state.resultWorkbook)return showToast("Belum ada hasil."); const out=XLSX.write(state.resultWorkbook,{bookType:"xlsx",type:"array",compression:true}); downloadBlob(new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`Hasil_Komper_SO_${new Date().toISOString().slice(0,10)}.xlsx`); }
+  function downloadMissing(){ if(!state.missingRows.length)return showToast("Tidak ada SKU yang tidak ditemukan."); const data=state.missingRows.map(x=>({Odoo:x.odoo,SAP:x.sap,Kode_Item:x.item,ProductName:x.name,QtyFix:x.qty,Sheet:x.source})); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data),"SKU Tidak Ditemukan"); const out=XLSX.write(wb,{bookType:"xlsx",type:"array",compression:true}); downloadBlob(new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`SKU_Tidak_Ditemukan_${new Date().toISOString().slice(0,10)}.xlsx`); }
+
+  function saveHistory(result){ const h=JSON.parse(localStorage.getItem("rsp_v10_history")||"[]"); h.unshift({date:new Date().toLocaleString("id-ID"),...result}); localStorage.setItem("rsp_v10_history",JSON.stringify(h.slice(0,20))); renderHistory(); }
+  function renderHistory(){ const h=JSON.parse(localStorage.getItem("rsp_v10_history")||"[]"); $("historyList").innerHTML=h.map(x=>`<div class="history-item"><strong>${x.date}</strong><br><span class="muted">${x.total} SO · ${x.matched} cocok · ${x.missing} tidak ditemukan · ${x.matchedCells||0} item terisi · Qty ${x.qtyWritten}</span></div>`).join("")||'<div class="empty-history">Belum ada riwayat.</div>'; }
+
+  function reset(){ state.templateFile=null;state.soFiles=[];state.templateWorkbook=null;state.resultWorkbook=null;state.missingRows=[];state.lastResult=null; $("templateInput").value="";$("soInput").value="";$("templateInfo").textContent="Belum ada template";$("soInfo").textContent="Belum ada file SO";$("downloadBtn").disabled=true;$("downloadMissingBtn").disabled=true;["totalSo","matched","notFound","qtyWritten"].forEach(id=>$(id).textContent="0");$("resultState").textContent="Belum diproses";$("resultState").className="status-pill neutral";progress(0);setStatus("Upload template dan file SO untuk memulai."); }
+
+  function init(){
+    $("templateInput").addEventListener("change",async e=>{const f=e.target.files[0];if(!f)return;try{state.templateFile=f;state.templateWorkbook=await readWorkbook(f);$("templateInfo").textContent=`✓ ${f.name} · ${(f.size/1024).toFixed(1)} KB · ${state.templateWorkbook.SheetNames.length} sheet`;setStatus("Template siap.");}catch(err){showToast("Gagal membaca template: "+err.message);}});
+    $("soInput").addEventListener("change",e=>{state.soFiles=[...e.target.files];$("soInfo").textContent=state.soFiles.length?`✓ ${state.soFiles.length} file dipilih`:`Belum ada file SO`;});
+    $("processBtn").addEventListener("click",async()=>{try{await processReconcile();}catch(err){console.error(err);setStatus(err.message,"error");showToast(err.message);}});
+    $("downloadBtn").addEventListener("click",downloadResult); $("downloadMissingBtn").addEventListener("click",downloadMissing); $("clearBtn").addEventListener("click",reset);
+    $("calcOverstock").addEventListener("click",()=>{const a=Number($("ovMonth1").value||0),b=Number($("ovMonth2").value||0),f=Number($("ovFactor").value||1.5),t=Number($("ovTarget").value||0),v=(a+b)*f,sel=v>t;$("ovResult").innerHTML=`<strong>${$("ovBrand").value||"Brand"}</strong><br>(Bulan 1 + Bulan 2) × ${f.toFixed(1)} = <b>${v.toLocaleString("id-ID")}</b><br>Target sekarang: <b>${t.toLocaleString("id-ID")}</b><br><span class="${sel?'danger':'good'}">${sel?'TERINDIKASI OVERSTOK':'Tidak melebihi target'}</span>`;});
+    const drawer=$("drawer"),back=$("drawerBackdrop"); const open=()=>{drawer.classList.add("open");back.classList.remove("hidden")},close=()=>{drawer.classList.remove("open");back.classList.add("hidden")}; $("menuBtn").onclick=open;$("closeMenu").onclick=close;back.onclick=close;
+    document.querySelectorAll(".nav-item").forEach(btn=>btn.addEventListener("click",()=>{document.querySelectorAll(".nav-item").forEach(x=>x.classList.remove("active"));btn.classList.add("active");document.querySelectorAll(".section").forEach(s=>s.classList.add("hidden"));$("section-"+btn.dataset.section).classList.remove("hidden");close();}));
+    renderHistory();
   }
-
-  function downloadResult() {
-    if (!state.resultWorkbook) return showToast("Belum ada hasil.");
-    const out = XLSX.write(state.resultWorkbook, {bookType:"xlsx", type:"array", compression:true});
-    downloadBlob(new Blob([out], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}), `Hasil_Komper_SO_${new Date().toISOString().slice(0,10)}.xlsx`);
-  }
-
-  function downloadMissing() {
-    if (!state.missingRows.length) return showToast("Tidak ada SKU yang tidak ditemukan.");
-    const data = state.missingRows.map(x => ({Odoo:x.odoo, SAP:x.sap, Kode_Item:x.item, ProductName:x.name, QtyFix:x.qty, Sheet:x.source}));
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(data);
-    XLSX.utils.book_append_sheet(wb, ws, "SKU Tidak Ditemukan");
-    const out = XLSX.write(wb, {bookType:"xlsx",type:"array",compression:true});
-    downloadBlob(new Blob([out], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}), `SKU_Tidak_Ditemukan_${new Date().toISOString().slice(0,10)}.xlsx`);
-  }
-
-  function saveHistory(result) {
-    const h = JSON.parse(localStorage.getItem("rsp_v10_history") || "[]");
-    h.unshift({date:new Date().toLocaleString("id-ID"), ...result});
-    localStorage.setItem("rsp_v10_history", JSON.stringify(h.slice(0,20)));
-  }
-
-  function renderHistory() {
-    const h = JSON.parse(localStorage.getItem("rsp_v10_history") || "[]");
-    $("historyList").innerHTML = h.map(x => `<div class="history-item"><strong>${x.date}</strong><br><span class="muted">${x.total} SO · ${x.matched} cocok · ${x.missing} tidak ditemukan · Qty ${x.qtyWritten}</span></div>`).join("");
-  }
-
-  function reset() {
-    state.templateFile=null; state.soFiles=[]; state.templateWorkbook=null; state.resultWorkbook=null; state.missingRows=[]; state.lastResult=null;
-    $("templateInput").value=""; $("soInput").value="";
-    $("templateInfo").textContent="Belum ada template"; $("templateInfo").className="file-info empty";
-    $("soInfo").textContent="Belum ada file SO"; $("soInfo").className="file-info empty";
-    ["totalSo","matched","notFound","qtyWritten"].forEach(id => $(id).textContent="0");
-    $("downloadBtn").disabled=true; $("downloadMissingBtn").disabled=true;
-    $("resultState").className="status-pill neutral"; $("resultState").textContent="Belum diproses";
-    progress(0); setStatus("Upload template dan file SO untuk memulai."); renderHistory();
-  }
-
-  $("templateInput").addEventListener("change", async e => {
-    const f=e.target.files[0]; if(!f) return;
-    try { state.templateFile=f; state.templateWorkbook=await readWorkbook(f); state.templateSheetName=firstSheet(state.templateWorkbook); $("templateInfo").textContent=`✓ ${f.name} · ${(f.size/1024).toFixed(1)} KB`; $("templateInfo").className="file-info"; setStatus("Template terbaca. Pilih file SO."); showToast("Template siap."); }
-    catch(err){ state.templateFile=null; showToast("Gagal membaca template: "+err.message); setStatus("Gagal membaca template.","error"); }
-  });
-
-  $("soInput").addEventListener("change", async e => {
-    const files=[...e.target.files]; if(!files.length)return;
-    try { state.soFiles=[]; for(const f of files) state.soFiles.push(await readWorkbook(f)); $("soInfo").textContent=`✓ ${files.length} file dipilih · ${files.map(f=>f.name).join(", ")}`; $("soInfo").className="file-info"; setStatus("File SO siap diproses."); showToast(`${files.length} file SO siap.`); }
-    catch(err){ showToast("Gagal membaca file SO: "+err.message); setStatus("Gagal membaca file SO.","error"); }
-  });
-
-  $("processBtn").addEventListener("click", () => {
-    try { processReconcile(); } catch(err) { console.error(err); setStatus(err.message,"error"); showToast("Gagal: "+err.message); }
-  });
-  $("downloadBtn").addEventListener("click", downloadResult);
-  $("downloadMissingBtn").addEventListener("click", downloadMissing);
-  $("clearBtn").addEventListener("click", reset);
-
-  $("calcOverstock").addEventListener("click", () => {
-    const b=$("ovBrand").value.trim() || "Brand";
-    const a=Number($("ovMonth1").value), c=Number($("ovMonth2").value), f=Number($("ovFactor").value), t=Number($("ovTarget").value);
-    if (![a,c,f,t].every(Number.isFinite) || a<0 || c<0 || t<0 || f<1.5 || f>2) return showToast("Isi angka dengan benar. Faktor 1,5–2,0.");
-    const base=a+c, batas=base*f, over=batas>t, selisih=batas-t;
-    $("ovResult").innerHTML=`<strong>${b}</strong><br>Total Bulan 1 + Bulan 2: <b>${base.toLocaleString("id-ID")}</b><br>Nilai × faktor ${f.toFixed(1)}: <b>${batas.toLocaleString("id-ID")}</b><br>Target sekarang: <b>${t.toLocaleString("id-ID")}</b><br><br><b>${over ? "⚠ TERINDIKASI OVERSTOK" : "✓ TIDAK TERINDIKASI OVERSTOK"}</b>${over ? `<br>Selisih di atas target: ${selisih.toLocaleString("id-ID")}` : ""}`;
-  });
-
-  function openMenu(){ $("drawer").classList.add("open"); $("drawerBackdrop").classList.remove("hidden"); }
-  function closeMenu(){ $("drawer").classList.remove("open"); $("drawerBackdrop").classList.add("hidden"); }
-  $("menuBtn").onclick=openMenu; $("closeMenu").onclick=closeMenu; $("drawerBackdrop").onclick=closeMenu;
-  document.querySelectorAll(".nav-item").forEach(btn => btn.addEventListener("click", () => {
-    document.querySelectorAll(".nav-item").forEach(x=>x.classList.remove("active")); btn.classList.add("active");
-    document.querySelectorAll(".section").forEach(s=>s.classList.add("hidden"));
-    $("section-"+btn.dataset.section).classList.remove("hidden"); if(btn.dataset.section==="history")renderHistory(); closeMenu(); window.scrollTo({top:0,behavior:"smooth"});
-  }));
-  renderHistory();
+  window.addEventListener("DOMContentLoaded",init);
 })();

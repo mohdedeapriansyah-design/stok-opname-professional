@@ -26,7 +26,7 @@
     <button class="nav-item active" data-section="reconcile">↻ Reconcile Otomatis</button>
     <button class="nav-item" data-section="overstock">▥ Analisa Overstok</button>
     <button class="nav-item" data-section="history">◷ Riwayat Proses</button>
-    <button class="nav-item" data-section="about">ⓘ Tentang Aplikasi</button>
+    
   </aside>
 
   <main class="container">
@@ -35,7 +35,7 @@
         <div>
           <div class="eyebrow">RECONCILE AUTOMATION</div>
           <h1>Rekonsiliasi Stock Opname</h1>
-          <p>Masukkan template Komper dan file SO. Sistem mendeteksi header Odoo/SAP/Qty secara otomatis.</p>
+          <p>Upload template dan file SO untuk diproses otomatis.</p>
         </div>
         <div class="hero-badge">V10</div>
       </div>
@@ -106,13 +106,7 @@
         </div>
       </article>
 
-      <article class="info-card">
-        <h2>Deteksi Header Otomatis</h2>
-        <div class="chip-list">
-          <span>Odoo</span><span>SAP</span><span>Kode Item</span><span>Product Name</span><span>Qty Fix</span><span>Quantity</span>
-        </div>
-        <p>Sistem mencari nama header tanpa bergantung pada posisi kolom. Jika Odoo tersedia, Odoo diprioritaskan. SAP menjadi fallback.</p>
-      </article>
+
     </section>
 
     <section id="section-overstock" class="section hidden">
@@ -137,19 +131,7 @@
       <article class="table-card"><div id="historyList" class="history-list"></div></article>
     </section>
 
-    <section id="section-about" class="section hidden">
-      <div class="hero compact"><div><div class="eyebrow">ABOUT</div><h1>Tentang Aplikasi</h1><p>Reconcile Stock Pro V10 — clean rebuild untuk Android dan GitHub Pages.</p></div></div>
-      <article class="info-card">
-        <h2>Prinsip V10</h2>
-        <ul>
-          <li>Deteksi header otomatis, tidak bergantung pada posisi kolom.</li>
-          <li>Odoo diprioritaskan; SAP digunakan sebagai fallback.</li>
-          <li>Hasil ditulis ke salinan template, bukan mengubah file asli.</li>
-          <li>SKU yang tidak ditemukan tidak dipaksakan masuk.</li>
-          <li>UI ringan dan responsif untuk layar Android.</li>
-        </ul>
-      </article>
-    </section>
+
   </main>
 
   <div id="toast" class="toast"></div>
