@@ -154,61 +154,69 @@
         <div class="page-title">
           <div>
             <span class="eyebrow">ANALISA OVERSTOK</span>
-            <h2>Analisa Overstok per Brand</h2>
-            <p>Rumus: <b>((Stok nominal bulan 1 + Stok nominal bulan 2) × 2) ÷ Omset bulan 3</b>. Data dihitung terpisah untuk setiap brand, misalnya Wardah, dan dibandingkan dengan target rasio.</p>
+            <h2>Analisa Potensi Stok per Brand</h2>
+            <p>Isi manual stok per brand untuk 2 bulan, pilih faktor 1,5–2,0, lalu bandingkan hasil perhitungan dengan target sekarang.</p>
           </div>
         </div>
 
         <article class="panel">
           <div class="form-grid">
-            <label>Brand
-              <input id="brandOverstok" type="text" placeholder="Contoh: Wardah">
+            <label>Nama Brand (opsional)
+              <input id="namaBrandOverstok" type="text" placeholder="Contoh: Brand A">
             </label>
-            <label>Nominal Stok Bulan 1
-              <input id="stokBulan1" type="number" min="0" step="1" placeholder="Contoh: 10000000">
+            <label>Data Stok per Brand — Bulan 1
+              <input id="stokBulan1" type="number" min="0" step="1" placeholder="Contoh: 50000000">
             </label>
-            <label>Nominal Stok Bulan 2
-              <input id="stokBulan2" type="number" min="0" step="1" placeholder="Contoh: 12000000">
+            <label>Data Stok per Brand — Bulan 2
+              <input id="stokBulan2" type="number" min="0" step="1" placeholder="Contoh: 60000000">
             </label>
-            <label>Omset Bulan 3
-              <input id="omsetBulan3" type="number" min="0" step="1" placeholder="Contoh: 25000000">
+            <label>Faktor Analisa (A + B)
+              <select id="faktorOverstok">
+                <option value="1.5">1,5×</option>
+                <option value="1.6">1,6×</option>
+                <option value="1.7">1,7×</option>
+                <option value="1.8">1,8×</option>
+                <option value="1.9">1,9×</option>
+                <option value="2">2,0×</option>
+              </select>
             </label>
-            <label>Target Rasio (%)
-              <input id="targetRasio" type="number" min="0" step="0.1" value="100" placeholder="100">
+            <label>Target Sekarang
+              <input id="targetAgustus" type="number" min="0" step="1" placeholder="Contoh: 100000000">
             </label>
           </div>
-          <div class="action-row" style="margin-top:12px">
-            <button id="btnTambahBrand" class="secondary-btn">＋ Tambah Brand</button>
-            <button id="btnAnalisa" class="primary-btn">📊 Hitung Semua Brand</button>
-            <button id="btnClearBrand" class="danger-btn">Bersihkan Data</button>
-          </div>
-          <p class="muted">Setiap brand dihitung sendiri. Contoh: Wardah tidak digabung dengan brand lain.</p>
+          <button id="btnAnalisa" class="primary-btn">📊 Jalankan Analisa</button>
         </article>
 
         <div id="overstokResult" class="analysis-result hidden">
           <div class="stats-grid">
-            <div class="stat"><span>Jumlah Brand</span><b id="totalBrand">0</b></div>
-            <div class="stat"><span>Brand Overstok</span><b id="jumlahOverstok">0</b></div>
-            <div class="stat"><span>Brand Aman</span><b id="jumlahAman">0</b></div>
-            <div class="stat"><span>Target Rasio</span><b id="targetResult">100%</b></div>
+            <div class="stat"><span>Stok Bulan 1 (A)</span><b id="stokBulan1Result">Rp0</b></div>
+            <div class="stat"><span>Stok Bulan 2 (B)</span><b id="stokBulan2Result">Rp0</b></div>
+            <div class="stat"><span>A + B</span><b id="totalOmset">Rp0</b></div>
+            <div class="stat"><span>Potensi Stok (A + B) × Faktor</span><b id="potensiStok">Rp0</b></div>
+            <div class="stat"><span>Target Sekarang</span><b id="targetResult">Rp0</b></div>
+            <div class="stat"><span>Selisih</span><b id="selisihResult">Rp0</b></div>
           </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Brand</th>
-                  <th>Stok B1</th>
-                  <th>Stok B2</th>
-                  <th>Omset B3</th>
-                  <th>Rumus</th>
-                  <th>Rasio</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="overstokTableBody"></tbody>
-            </table>
-          </div>
+          <div id="statusOverstok" class="status-result"></div>
         </div>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Data Banyak / Lebih dari 6</h3>
+              <p class="muted">Tempel atau masukkan data dengan kolom Kode SAP, Nama, dan Qty. Sistem menampilkan data dengan Qty &gt; 6.</p>
+            </div>
+          </div>
+          <textarea id="bulkData" rows="7" placeholder="Kode SAP | Nama Produk | Qty
+100001 | Contoh Produk A | 7
+100002 | Contoh Produk B | 3"></textarea>
+          <button id="btnFilterQty" class="secondary-btn">🔎 Analisa Qty &gt; 6</button>
+          <div id="qtyAnalysisResult" class="table-wrap"></div>
+        </article>
+      </section>
+
+      <section id="page-history" class="page">
+        <div class="page-title"><div><span class="eyebrow">RIWAYAT</span><h2>Riwayat Proses</h2><p>Riwayat proses tersimpan di perangkat ini.</p></div><button id="btnClearHistory" class="danger-btn">Hapus Riwayat</button></div>
+        <div id="historyList" class="history-list"></div>
       </section>
 
       <section id="page-about" class="page">
@@ -243,5 +251,7 @@
   <script src="js/storage-engine.js"></script>
   <script src="js/overstok-engine.js"></script>
   <script src="app.js"></script>
+<script src="js/reconcile-stock-v8.js"></script>
+<script src="../v8.2/reconcile-stock-v8.2.js"></script>
 </body>
 </html>

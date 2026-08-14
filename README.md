@@ -1,8 +1,3 @@
-
-## V6 FIX Freeze
-- Excel parsing is limited to 10,000 rows to prevent 1,048,576-row formatting artifacts from freezing the browser.
-- Template and SO parsing remains based on actual populated cells.
-- SAP matching remains the primary key.
 # STOK OPNAME PROFESSIONAL
 
 Aplikasi web responsif untuk Reconcile Automation dan Analisa Overstok.
@@ -50,31 +45,19 @@ Kolom formula lain tidak disentuh oleh engine.
 
 ## Analisa Overstok
 
-Data diambil **per brand** (misalnya Wardah, tidak digabung dengan brand lain).
+Rumus:
 
-Rumus yang digunakan:
+`(Omset Juni + Omset Juli) × Faktor`
 
-`((Nominal stok bulan 1 + Nominal stok bulan 2) × 2) ÷ Omset bulan 3`
+Faktor default:
 
-Hasil dikonversi menjadi persentase:
+`1.5`
 
-`Rasio = ((Stok B1 + Stok B2) × 2 / Omset B3) × 100%`
-
-Jika rasio lebih besar dari target rasio:
+Jika hasil lebih besar dari Target Agustus:
 `OVERSTOK`
 
-Jika rasio sama atau lebih kecil:
+Jika hasil sama atau lebih kecil:
 `AMAN`
-
-Target default:
-`100%`
-
-## Perbaikan performa
-
-- Pembacaan Excel tidak lagi memuat `cellStyles` dan `cellNF` yang berat.
-- Proses file besar memberi kesempatan browser bernapas setiap beberapa ribu baris agar UI tidak terasa hang/freeze.
-- Download XLSX dibuat sebagai Blob secara asynchronous, bukan `XLSX.writeFile()` langsung.
-- Data overstok dihitung terpisah per brand.
 
 ## Menjalankan
 
@@ -91,6 +74,3 @@ Untuk penggunaan Android/PWA, aplikasi sebaiknya dijalankan melalui HTTPS saat s
 Aplikasi menggunakan SheetJS melalui CDN pada `index.html`. Karena itu proses pembacaan XLSX membutuhkan koneksi internet saat library belum tersedia secara lokal.
 
 Untuk produksi offline penuh, simpan `xlsx.full.min.js` ke folder `js` lalu ubah pemanggilan CDN menjadi file lokal.
-
-
-FIX V5: Rekonsiliasi menggunakan productSapCode sebagai kunci utama. Untuk Template Komper lama yang tidak memiliki kolom Kode SAP, productOdooCode dipakai hanya sebagai bridge yang berasal dari pasangan SAP-Odoo pada file SO. Kolom HASIL SO diisi langsung dan pembacaan sheet dibatasi ke sel yang benar-benar berisi data untuk mengurangi lag.

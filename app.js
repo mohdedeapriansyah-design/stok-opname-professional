@@ -7,8 +7,7 @@
     templateFile: null,
     templateWorkbook: null,
     soFiles: [],
-    reconcileResult: null,
-    overstokBrands: []
+    reconcileResult: null
   };
 
   const menuToggle = $("menuToggle");
@@ -164,21 +163,20 @@
           "Membaca file SO..."
         );
 
-        const soEntries =
-          await FileEngine.readMultiple(
+        const processed =
+          await FileEngine.readAndProcess(
             AppState.soFiles,
-            setProgress
+            {
+              createAccumulator: ReconcileEngine.createAccumulator,
+              process: ReconcileEngine.processEntry
+            },
+            (percent, text) => setProgress(5 + Math.round(percent * 0.65), text)
           );
 
         setProgress(
-          70,
-          "Menggabungkan data QtyFix..."
+          72,
+          `Data QtyFix selesai digabungkan (${processed.qtyMap.size.toLocaleString("id-ID")} SKU).`
         );
-
-        const processed =
-          await ReconcileEngine.processMultiple(
-            soEntries
-          );
 
         if (
           processed.qtyMap.size === 0
@@ -201,10 +199,8 @@
             {
               type: "array",
               cellFormula: true,
-              cellNF: false,
-              cellStyles: false,
-              cellHTML: false,
-              sheetRows: 10000
+              cellNF: true,
+              cellStyles: true
             }
           );
 
@@ -214,10 +210,17 @@
         );
 
         const result =
-          await ReconcileEngine.reconcileTemplate(
+          ReconcileEngine.reconcileTemplate(
             workbook,
             processed
           );
+
+        // V8.1: sourceMap berisi detail setiap baris dan bisa sangat besar.
+        // Setelah reconcile selesai, detail sumber tidak diperlukan untuk download/preview.
+        if (processed && processed.sourceMap) {
+          processed.sourceMap.clear();
+          processed.sourceMap = null;
+        }
 
         AppState.reconcileResult = {
           ...result,
@@ -324,30 +327,28 @@
     }
   );
 
-  $("btnDownload").addEventListener("click", async () => {
-    if (!AppState.reconcileResult) {
-      alert("Belum ada hasil.");
-      return;
-    }
+  $("btnDownload").addEventListener(
+    "click",
+    () => {
 
-    const btn = $("btnDownload");
-    if (btn.disabled) return;
-    btn.disabled = true;
-    const oldText = btn.textContent;
-    btn.textContent = "⏳ Menyiapkan file...";
+      if (
+        !AppState.reconcileResult
+      ) {
 
-    try {
-      await new Promise(requestAnimationFrame);
-      await ExportEngine.downloadXLSX(AppState.reconcileResult.workbook);
-      $("statusText").textContent = "✓ Download dimulai.";
-    } catch (error) {
-      console.error("DOWNLOAD ERROR:", error);
-      alert("Gagal membuat file download: " + (error.message || error));
-    } finally {
-      btn.disabled = false;
-      btn.textContent = oldText;
+        alert(
+          "Belum ada hasil."
+        );
+
+        return;
+
+      }
+
+      ExportEngine.downloadXLSX(
+        AppState.reconcileResult.workbook
+      );
+
     }
-  });
+  );
 
   $("btnPreview").addEventListener(
     "click",
@@ -490,109 +491,68 @@
     }
   );
 
-  // =========================
-  // ANALISA OVERSTOK PER BRAND
-  // Rumus: ((stok bulan 1 + stok bulan 2) * 2) / omset bulan 3
-  // =========================
-  function getOverstokInput() {
-    const brand = $("brandOverstok").value.trim();
-    const stok1 = Number($("stokBulan1").value);
-    const stok2 = Number($("stokBulan2").value);
-    const omset3 = Number($("omsetBulan3").value);
+  $("btnAnalisa").addEventListener(
+    "click",
+    () => {
 
-    if (!brand) throw new Error("Nama brand wajib diisi.");
-    if (![stok1, stok2, omset3].every(Number.isFinite) || stok1 < 0 || stok2 < 0 || omset3 <= 0) {
-      throw new Error("Nominal stok harus >= 0 dan Omset bulan 3 harus lebih dari 0.");
+      const result =
+        OverstokEngine.calculate(
+
+          $("stokBulan1").value,
+
+          $("stokBulan2").value,
+
+          $("targetAgustus").value,
+
+          $("faktorOverstok").value
+
+        );
+
+      $("stokBulan1Result").textContent =
+        rupiah(result.bulan1);
+
+      $("stokBulan2Result").textContent =
+        rupiah(result.bulan2);
+
+      $("totalOmset").textContent =
+        rupiah(result.total);
+
+      $("potensiStok").textContent =
+        rupiah(result.potensi);
+
+      $("targetResult").textContent =
+        rupiah(result.target);
+
+      $("selisihResult").textContent =
+        rupiah(
+          Math.abs(
+            result.selisih
+          )
+        );
+
+      const box =
+        $("statusOverstok");
+
+      box.className =
+        `status-result ${
+          result.status === "OVERSTOK"
+            ? "overstok"
+            : "aman"
+        }`;
+
+      box.textContent =
+        result.status === "OVERSTOK"
+
+          ? `⚠️ OVERSTOK — Potensi ${rupiah(result.potensi)} lebih besar dari Target Sekarang sebesar ${rupiah(result.selisih)}.`
+
+          : `✓ AMAN — Potensi ${rupiah(result.potensi)} tidak lebih besar dari Target Sekarang.`;
+
+      $("overstokResult")
+        .classList
+        .remove("hidden");
+
     }
-    return { brand, stok1, stok2, omset3 };
-  }
-
-  function clearOverstokInputs() {
-    $("brandOverstok").value = "";
-    $("stokBulan1").value = "";
-    $("stokBulan2").value = "";
-    $("omsetBulan3").value = "";
-    $("brandOverstok").focus();
-  }
-
-  function renderOverstokBrands() {
-    const box = $("overstokTableBody");
-    if (!box) return;
-    const target = Number($("targetRasio").value) || 100;
-
-    box.innerHTML = AppState.overstokBrands.length
-      ? AppState.overstokBrands.map((x, i) => {
-          const r = OverstokEngine.calculateBrand(x.stok1, x.stok2, x.omset3, target);
-          return `<tr>
-            <td><b>${escapeHtml(x.brand)}</b></td>
-            <td>${rupiah(x.stok1)}</td>
-            <td>${rupiah(x.stok2)}</td>
-            <td>${rupiah(x.omset3)}</td>
-            <td>${rupiah(x.stok1 + x.stok2)} × 2 ÷ ${rupiah(x.omset3)}</td>
-            <td>${r.ratio.toFixed(2)}%</td>
-            <td><span class="status-result ${r.status === "OVERSTOK" ? "overstok" : "aman"}">${r.status}</span>
-              <button type="button" class="danger-btn" data-remove-brand="${i}" style="margin-left:6px;padding:5px 8px">×</button>
-            </td>
-          </tr>`;
-        }).join("")
-      : `<tr><td colspan="7" class="muted">Belum ada data brand.</td></tr>`;
-  }
-
-  $("btnTambahBrand").addEventListener("click", () => {
-    try {
-      const item = getOverstokInput();
-      AppState.overstokBrands.push(item);
-      renderOverstokBrands();
-      $("overstokResult").classList.remove("hidden");
-      clearOverstokInputs();
-      $("statusText").textContent = `Data ${item.brand} ditambahkan.`;
-    } catch (error) {
-      alert(error.message);
-    }
-  });
-
-  $("btnClearBrand").addEventListener("click", () => {
-    AppState.overstokBrands = [];
-    renderOverstokBrands();
-    $("overstokResult").classList.add("hidden");
-  });
-
-  $("overstokTableBody").addEventListener("click", e => {
-    const btn = e.target.closest("[data-remove-brand]");
-    if (!btn) return;
-    AppState.overstokBrands.splice(Number(btn.dataset.removeBrand), 1);
-    renderOverstokBrands();
-  });
-
-  $("btnAnalisa").addEventListener("click", () => {
-    try {
-      if (!AppState.overstokBrands.length) {
-        // Izinkan satu input langsung tanpa harus menekan Tambah Brand.
-        const item = getOverstokInput();
-        AppState.overstokBrands.push(item);
-        clearOverstokInputs();
-      }
-
-      const target = Number($("targetRasio").value);
-      if (!Number.isFinite(target) || target < 0) throw new Error("Target rasio tidak valid.");
-
-      const results = AppState.overstokBrands.map(x =>
-        OverstokEngine.calculateBrand(x.stok1, x.stok2, x.omset3, target)
-      );
-      const over = results.filter(x => x.status === "OVERSTOK").length;
-
-      $("totalBrand").textContent = results.length;
-      $("jumlahOverstok").textContent = over;
-      $("jumlahAman").textContent = results.length - over;
-      $("targetResult").textContent = `${target.toFixed(2)}%`;
-
-      renderOverstokBrands();
-      $("overstokResult").classList.remove("hidden");
-      $("statusText").textContent = `Analisa selesai: ${over} dari ${results.length} brand terindikasi OVERSTOK.`;
-    } catch (error) {
-      alert(error.message);
-    }
-  });
+  );
 
   $("btnFilterQty").addEventListener(
     "click",
