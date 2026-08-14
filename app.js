@@ -10,7 +10,15 @@ const canon=v=>{
   if(/^\d+$/.test(s)) s=s.replace(/^0+(?=\d)/,"");
   return s.toUpperCase();
 };
-const safeFileName=s=>String(s).replace(/[^\w.-]+/g,"_");
+const safeFileName=s=>String(s).replace(/[^\\w.-]+/g,"_");
+
+/* Read worksheet rows without copying dense SheetJS arrays.
+   SheetJS dense worksheets are already row arrays; returning them directly
+   avoids another large allocation on Android. */
+function readRows(ws){
+  if(Array.isArray(ws)) return ws;
+  return XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true});
+}
 
 function page(name){
   const titles={home:"Beranda",reconcile:"Reconcile Otomatis",overstock:"Analisa Overstok",history:"Riwayat Proses",about:"Tentang Aplikasi"};
@@ -250,3 +258,4 @@ render.about=()=>$("#content").innerHTML=`<div class="card"><h3>Reconcile Stock 
 $("#menuBtn").onclick=()=>$("#sidebar").classList.toggle("open");
 document.querySelectorAll(".sidebar button").forEach(b=>b.onclick=()=>page(b.dataset.page));
 page("home");
+              
