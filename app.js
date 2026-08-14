@@ -1,718 +1,252 @@
-(() => {
-  "use strict";
+/* V9 clean rebuild: one API, no legacy FileEngine calls. */
+const App={template:null,soFiles:[],lastResult:null,history:JSON.parse(localStorage.getItem("rsp_v9_history")||"[]")};
+const $=s=>document.querySelector(s);
+const toast=m=>{const t=$("#toast");t.textContent=m;t.style.display="block";setTimeout(()=>t.style.display="none",2500)};
+const money=n=>new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(Number(n)||0);
+const qty=n=>Number.isFinite(Number(n))?Number(n):0;
+const canon=v=>{
+  if(v===null||v===undefined)return "";
+  let s=String(v).trim();
+  if(/^\d+$/.test(s)) s=s.replace(/^0+(?=\d)/,"");
+  return s.toUpperCase();
+};
+const safeFileName=s=>String(s).replace(/[^\w.-]+/g,"_");
 
-  const $ = id => document.getElementById(id);
+function page(name){
+  const titles={home:"Beranda",reconcile:"Reconcile Otomatis",overstock:"Analisa Overstok",history:"Riwayat Proses",about:"Tentang Aplikasi"};
+  $("#app").innerHTML=`<div class="page"><h1>${titles[name]}</h1><div id="content"></div></div>`;
+  render[name]();
+  document.querySelectorAll(".sidebar button").forEach(b=>b.classList.toggle("active",b.dataset.page===name));
+  $("#sidebar").classList.remove("open");
+}
+const render={};
 
-  const AppState = {
-    templateFile: null,
-    templateWorkbook: null,
-    soFiles: [],
-    reconcileResult: null
+render.home=()=>$("#content").innerHTML=`
+<div class="hero"><div class="big">Reconcile Automation</div><p>Upload Template Komper + banyak file SO, proses otomatis dan tetap menjaga template asli.</p></div>
+<div class="grid">
+<div class="card"><h3>↻ Reconcile Otomatis</h3><p class="muted">Masukkan template dan file SO sebanyak yang diperlukan.</p><button class="btn" onclick="page('reconcile')">Mulai</button></div>
+<div class="card"><h3>◈ Analisa Overstok</h3><p class="muted">Hitung stok per brand berdasarkan 2 bulan dan faktor 1,5–2,0.</p><button class="btn" onclick="page('overstock')">Buka</button></div>
+<div class="card"><h3>▣ Riwayat</h3><p class="muted">Melihat proses terakhir tanpa menyimpan file Excel ke server.</p><button class="btn" onclick="page('history')">Buka</button></div>
+</div>`;
+
+render.reconcile=()=>{
+$("#content").innerHTML=`
+<div class="grid">
+<div class="card"><h3>1. File Template Komper</h3>
+<label class="upload">📄<br><b>Klik untuk memilih file</b><br><small>XLSX / XLS / CSV</small><input id="templateInput" type="file" accept=".xlsx,.xls,.csv"></label>
+<div id="templateInfo" class="status muted">Belum ada template.</div></div>
+<div class="card"><h3>2. File Hasil SO</h3>
+<label class="upload">📚<br><b>Klik untuk memilih banyak file</b><br><small>Semua file diproses berurutan</small><input id="soInput" type="file" multiple accept=".xlsx,.xls,.csv"></label>
+<div id="soInfo" class="status muted">Belum ada file SO.</div></div>
+</div>
+<div class="card" style="margin-top:14px"><h3>3. Engine Reconcile</h3>
+<div class="progress"><i id="bar"></i></div><p id="progressText" class="muted">Siap.</p>
+<div class="row"><button class="btn" id="processBtn">Proses Rekonsiliasi</button><button class="btn secondary" id="clearBtn">Bersihkan</button></div></div>
+<div class="card" style="margin-top:14px"><h3>4. Hasil</h3><div id="resultInfo" class="status">Belum diproses.</div><div class="row" style="margin-top:10px"><button class="btn" id="downloadBtn" disabled>Download Hasil</button><button class="btn secondary" id="missingBtn" disabled>SKU Tidak Ditemukan</button></div></div>
+<div class="card" style="margin-top:14px"><h3>Aturan pembacaan SO</h3><p>Kolom dicari berdasarkan nama header: <b>productSapCode / Kode SAP</b>, <b>ProductName</b>, <b>ProductCode</b>, dan <b>qtyFix</b>. Kode numerik seperti 0003184 dinormalisasi menjadi 3184 agar dapat dicocokkan dengan template.</p><p>Template asli tidak diubah. Yang ditulis hanya nilai Qty pada salinan hasil.</p></div>`;
+bindReconcile();
+};
+
+function setProgress(p,text){$("#bar").style.width=Math.max(0,Math.min(100,p))+"%";$("#progressText").textContent=text}
+
+function cleanHeader(v){
+  return String(v??"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"");
+}
+function headerCandidates(rows, maxRows=40){
+  const result=[];
+  for(let r=0;r<Math.min(rows.length,maxRows);r++){
+    const headers=rows[r].map(cleanHeader);
+    result.push({r,headers});
+  }
+  return result;
+}
+/* Automatic header detection:
+   - Odoo and SAP are optional.
+   - Qty is detected by aliases.
+   - Column positions do not matter.
+   - Each sheet/file is detected independently. */
+function detectSOHeader(rows){
+  const aliases={
+    odoo:["PRODUCTODOOCODE","ODOOCODE","ODOOPRODUCTCODE","KODEODOO","ODOO"],
+    sap:["PRODUCTSAPCODE","SAPCODE","KODESAP","SAPPRODUCTCODE","MATERIALCODE","MATERIAL"],
+    name:["PRODUCTNAME","NAMAPRODUK","PRODUCTDESCRIPTION","DESCRIPTION","NAMA"],
+    qty:["QTYFIX","QTY","QUANTITY","QTYSO","QTYOPNAME","HASILSO","STOCKQTY","SOQTY"]
   };
-
-  const menuToggle = $("menuToggle");
-  const sidebar = $("sidebar");
-  const overlay = $("overlay");
-
-  function openMenu() {
-    sidebar.classList.add("open");
-    menuToggle.setAttribute("aria-expanded", "true");
-  }
-
-  function closeMenu() {
-    sidebar.classList.remove("open");
-    menuToggle.setAttribute("aria-expanded", "false");
-  }
-
-  menuToggle.addEventListener("click", () =>
-    sidebar.classList.contains("open") ? closeMenu() : openMenu()
-  );
-
-  $("menuClose").addEventListener("click", closeMenu);
-  overlay.addEventListener("click", closeMenu);
-
-  function showPage(page) {
-    document.querySelectorAll(".page").forEach(x =>
-      x.classList.remove("active")
-    );
-
-    $(`page-${page}`).classList.add("active");
-
-    document.querySelectorAll(".nav-item").forEach(x =>
-      x.classList.toggle("active", x.dataset.page === page)
-    );
-
-    closeMenu();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  document.querySelectorAll(".nav-item").forEach(x =>
-    x.addEventListener("click", () => showPage(x.dataset.page))
-  );
-
-  document.querySelectorAll("[data-go]").forEach(x =>
-    x.addEventListener("click", () => showPage(x.dataset.go))
-  );
-
-  $("templateFile").addEventListener("change", async e => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    AppState.templateFile = file;
-
-    $("templateInfo").className = "file-info";
-    $("templateInfo").textContent =
-      `✓ ${file.name} — ${(file.size / 1024).toFixed(1)} KB`;
-
-    try {
-      AppState.templateWorkbook =
-        await FileEngine.readWorkbook(file);
-
-      const inspection =
-        ReconcileEngine.inspectTemplate(
-          AppState.templateWorkbook
-        );
-
-      const validSheets =
-        inspection.filter(x => x.headerFound);
-
-      if (validSheets.length === 0) {
-        $("statusText").textContent =
-          "Template terbaca, tetapi struktur KODE ITEM / HASIL SO belum ditemukan.";
-      } else {
-        $("statusText").textContent =
-          `Template siap. ${validSheets.length} sheet terdeteksi.`;
-      }
-
-    } catch (error) {
-
-      $("statusText").textContent =
-        "Gagal membaca template: " + error.message;
-
+  for(const item of headerCandidates(rows,40)){
+    const find=keys=>item.headers.findIndex(h=>keys.some(k=>h===k||h.includes(k)));
+    const odoo=find(aliases.odoo), sap=find(aliases.sap), name=find(aliases.name), qty=find(aliases.qty);
+    if(qty>=0 && (odoo>=0||sap>=0||name>=0)){
+      return {headerRow:item.r,odoo,sap,name,qty,
+        hasOdoo:odoo>=0,hasSap:sap>=0,hasName:name>=0};
     }
+  }
+  return null;
+}
+function detectTemplateHeader(rows){
+  const aliases={
+    code:["KODEITEM","PRODUCTODOOCODE","PRODUCTCODE","ITEMCODE","KODEPRODUK"],
+    name:["NAMAPRODUK","PRODUCTNAME","DESCRIPTION"],
+    qty:["HASILSO","QTY","QUANTITY"]
+  };
+  for(const item of headerCandidates(rows,20)){
+    const find=keys=>item.headers.findIndex(h=>keys.some(k=>h===k||h.includes(k)));
+    const code=find(aliases.code), name=find(aliases.name), qty=find(aliases.qty);
+    if(code>=0 && qty>=0)return {headerRow:item.r,code,name,qty};
+  }
+  return null;
+}
+function normalizeCode(v){
+  if(v===null||v===undefined||v==="")return "";
+  let s=String(v).trim();
+  if(/^\d+\.0+$/.test(s))s=s.replace(/\.0+$/,"");
+  return s.toUpperCase();
+}
+function makeKeys(item){
+  const keys=[];
+  if(item.odoo)keys.push("ODOO:"+normalizeCode(item.odoo));
+  if(item.sap)keys.push("SAP:"+normalizeCode(item.sap));
+  if(item.name)keys.push("NAME:"+String(item.name).trim().toUpperCase());
+  return keys;
+}
+async function readSO(file){
+  const wb=XLSX.read(await file.arrayBuffer(),{
+    type:"array",dense:true,cellFormula:false,cellStyles:false,cellNF:false
   });
-
-  $("soFiles").addEventListener("change", e => {
-
-    AppState.soFiles =
-      Array.from(e.target.files || []);
-
-    const box = $("soFileList");
-
-    box.className = "file-list";
-
-    box.innerHTML =
-      AppState.soFiles.length
-
-        ? AppState.soFiles.map((file, index) => `
-            <div class="file-row">
-              <span>
-                ${index + 1}. ${escapeHtml(file.name)}
-              </span>
-              <small>
-                ${(file.size / 1024).toFixed(1)} KB
-              </small>
-            </div>
-          `).join("")
-
-        : "Belum ada file SO";
-
+  const out=[];
+  for(const sheetName of wb.SheetNames){
+    const rows=readRows(wb.Sheets[sheetName]);
+    const h=detectSOHeader(rows);
+    if(!h)continue;
+    const items=[];
+    for(let r=h.headerRow+1;r<rows.length;r++){
+      const row=rows[r];
+      const item={
+        odoo:h.hasOdoo?row[h.odoo]:"",
+        sap:h.hasSap?row[h.sap]:"",
+        name:h.hasName?row[h.name]:"",
+        qty:qty(row[h.qty])
+      };
+      if(makeKeys(item).length)items.push(item);
+      if(r%2000===0)await new Promise(requestAnimationFrame);
+    }
+    out.push({name:sheetName,header:h,items});
+  }
+  return out;
+}
+function buildTemplateIndex(wb){
+  const byKey=new Map(), sheets=[];
+  for(const name of wb.SheetNames){
+    const ws=wb.Sheets[name],rows=readRows(ws);
+    const h=detectTemplateHeader(rows);
+    if(!h)continue;
+    sheets.push({name,rows,header:h});
+    for(let r=h.headerRow+1;r<rows.length;r++){
+      const code=normalizeCode(rows[r][h.code]);
+      if(code)byKey.set("ODOO:"+code,{sheet:name,row:r,qtyCol:h.qty});
+      if(h.name>=0){
+        const nm=String(rows[r][h.name]??"").trim().toUpperCase();
+        if(nm)byKey.set("NAME:"+nm,{sheet:name,row:r,qtyCol:h.qty});
+      }
+    }
+  }
+  return {byKey,sheets};
+}
+function setQtyCell(ws,row,col,value){
+  const addr=XLSX.utils.encode_cell({r:row,c:col});
+  const old=ws[addr]||{};
+  ws[addr]={...old,t:"n",v:Number(value)||0};
+}
+async function reconcile(){
+  if(!App.template||!App.soFiles.length)return toast("Upload template dan minimal 1 file SO.");
+  setProgress(3,"Deteksi header Template...");
+  const wb=XLSX.read(await App.template.arrayBuffer(),{
+    type:"array",dense:true,cellFormula:true,cellStyles:true,cellNF:true
   });
-
-  function setProgress(number, text) {
-
-    $("progressBar").style.width =
-      `${number}%`;
-
-    $("statusText").textContent =
-      text;
-
+  const ti=buildTemplateIndex(wb);
+  if(!ti.sheets.length)throw new Error("Header Template tidak dikenali.");
+  const totals=new Map(),unmatched=[];
+  let detectedOdoo=0,detectedSap=0;
+  for(let i=0;i<App.soFiles.length;i++){
+    const f=App.soFiles[i];
+    setProgress(8+(i/App.soFiles.length)*42,`Deteksi header SO ${i+1}/${App.soFiles.length}: ${f.name}`);
+    const sheets=await readSO(f);
+    for(const sh of sheets){
+      if(sh.header.hasOdoo)detectedOdoo++;
+      if(sh.header.hasSap)detectedSap++;
+      for(const item of sh.items){
+        let hit=null,matchedBy="";
+        for(const key of makeKeys(item)){
+          hit=ti.byKey.get(key);
+          if(hit){matchedBy=key.split(":")[0];break;}
+        }
+        if(!hit){
+          unmatched.push({
+            File:f.name,Sheet:sh.name,
+            ProductOdooCode:item.odoo||"",
+            ProductSapCode:item.sap||"",
+            ProductName:item.name||"",
+            QtyFix:item.qty
+          });
+          continue;
+        }
+        const k=hit.sheet+"|"+hit.row;
+        const old=totals.get(k);
+        totals.set(k,{...hit,qty:(old?.qty||0)+item.qty,matchedBy});
+      }
+    }
+    await new Promise(requestAnimationFrame);
   }
-
-  $("btnProcess").addEventListener(
-    "click",
-    async () => {
-
-      try {
-
-        if (
-          !AppState.templateFile ||
-          !AppState.templateWorkbook
-        ) {
-
-          throw new Error(
-            "Upload Template Komper terlebih dahulu."
-          );
-
-        }
-
-        if (
-          !AppState.soFiles.length
-        ) {
-
-          throw new Error(
-            "Upload minimal satu file hasil SO."
-          );
-
-        }
-
-        $("btnProcess").disabled = true;
-
-        setProgress(
-          5,
-          "Membaca file SO..."
-        );
-
-        const processed =
-          await FileEngine.readAndProcess(
-            AppState.soFiles,
-            {
-              createAccumulator: ReconcileEngine.createAccumulator,
-              process: ReconcileEngine.processEntry
-            },
-            (percent, text) => setProgress(5 + Math.round(percent * 0.65), text)
-          );
-
-        setProgress(
-          72,
-          `Data QtyFix selesai digabungkan (${processed.qtyMap.size.toLocaleString("id-ID")} SKU).`
-        );
-
-        if (
-          processed.qtyMap.size === 0
-        ) {
-
-          throw new Error(
-            "Tidak ada data QtyFix yang berhasil dibaca dari file SO."
-          );
-
-        }
-
-        setProgress(
-          82,
-          "Membuat salinan workbook template..."
-        );
-
-        const workbook =
-          XLSX.read(
-            await AppState.templateFile.arrayBuffer(),
-            {
-              type: "array",
-              cellFormula: true,
-              cellNF: true,
-              cellStyles: true
-            }
-          );
-
-        setProgress(
-          88,
-          "Memasukkan QtyFix ke kolom HASIL SO..."
-        );
-
-        const result =
-          ReconcileEngine.reconcileTemplate(
-            workbook,
-            processed
-          );
-
-        // V8.1: sourceMap berisi detail setiap baris dan bisa sangat besar.
-        // Setelah reconcile selesai, detail sumber tidak diperlukan untuk download/preview.
-        if (processed && processed.sourceMap) {
-          processed.sourceMap.clear();
-          processed.sourceMap = null;
-        }
-
-        AppState.reconcileResult = {
-          ...result,
-          processed
-        };
-
-        $("statTemplate").textContent =
-          result.templateRows;
-
-        $("statSO").textContent =
-          processed.qtyMap.size;
-
-        $("statMatched").textContent =
-          result.matched.length;
-
-        $("statNotFound").textContent =
-          result.notFound.length;
-
-        $("resultSummary").textContent =
-          `${processed.rowsRead} baris SO dibaca dari ` +
-          `${AppState.soFiles.length} file dan ` +
-          `${processed.sheetsRead} sheet.`;
-
-        $("resultPanel").classList.remove(
-          "hidden"
-        );
-
-        const nf =
-          $("notFoundBox");
-
-        if (
-          result.notFound.length
-        ) {
-
-          nf.classList.remove(
-            "hidden"
-          );
-
-          nf.innerHTML =
-            `<b>${result.notFound.length} data KODE ITEM tidak ditemukan di SO.</b>`;
-
-        } else {
-
-          nf.classList.add(
-            "hidden"
-          );
-
-        }
-
-        StorageEngine.add({
-
-          date:
-            new Date().toLocaleString(
-              "id-ID"
-            ),
-
-          template:
-            AppState.templateFile.name,
-
-          files:
-            AppState.soFiles.map(
-              x => x.name
-            ),
-
-          matched:
-            result.matched.length,
-
-          notFound:
-            result.notFound.length
-
-        });
-
-        renderHistory();
-
-        setProgress(
-          100,
-          "✓ Proses selesai. Hasil siap di-download."
-        );
-
-      } catch (error) {
-
-        console.error(
-          "RECONCILE ERROR:",
-          error
-        );
-
-        alert(
-          error.message ||
-          String(error)
-        );
-
-        setProgress(
-          0,
-          "Proses gagal."
-        );
-
-      } finally {
-
-        $("btnProcess").disabled =
-          false;
-
-      }
-
-    }
-  );
-
-  $("btnDownload").addEventListener(
-    "click",
-    () => {
-
-      if (
-        !AppState.reconcileResult
-      ) {
-
-        alert(
-          "Belum ada hasil."
-        );
-
-        return;
-
-      }
-
-      ExportEngine.downloadXLSX(
-        AppState.reconcileResult.workbook
-      );
-
-    }
-  );
-
-  $("btnPreview").addEventListener(
-    "click",
-    () => {
-
-      const result =
-        AppState.reconcileResult;
-
-      if (!result) return;
-
-      const rows =
-        result.matched.slice(
-          0,
-          500
-        );
-
-      $("previewContent").innerHTML = `
-
-        <div class="stats-grid">
-
-          <div class="stat">
-            <span>Sheet Diproses</span>
-            <b>
-              ${
-                result.sheetResults
-                  .filter(x =>
-                    x.status === "DIPROSES"
-                  ).length
-              }
-            </b>
-          </div>
-
-          <div class="stat">
-            <span>SKU Cocok</span>
-            <b>
-              ${result.matched.length}
-            </b>
-          </div>
-
-          <div class="stat">
-            <span>Tidak Ditemukan</span>
-            <b>
-              ${result.notFound.length}
-            </b>
-          </div>
-
-        </div>
-
-        <table class="data-table">
-
-          <thead>
-
-            <tr>
-              <th>Sheet</th>
-              <th>Kode Item</th>
-              <th>QtyFix</th>
-              <th>Baris Template</th>
-            </tr>
-
-          </thead>
-
-          <tbody>
-
-            ${
-              rows.map(x => `
-
-                <tr>
-
-                  <td>
-                    ${escapeHtml(x.sheet)}
-                  </td>
-
-                  <td>
-                    ${escapeHtml(x.sap)}
-                  </td>
-
-                  <td>
-                    ${x.qty}
-                  </td>
-
-                  <td>
-                    ${x.row}
-                  </td>
-
-                </tr>
-
-              `).join("")
-            }
-
-          </tbody>
-
-        </table>
-
-        <button
-          id="exportNF"
-          class="secondary-btn"
-          style="margin-top:12px"
-        >
-          Export SKU Tidak Ditemukan
-        </button>
-
-      `;
-
-      $("previewModal")
-        .classList
-        .remove("hidden");
-
-      $("exportNF").onclick =
-        () =>
-          ExportEngine.exportNotFound(
-            result.notFound
-          );
-
-    }
-  );
-
-  $("btnClose").addEventListener(
-    "click",
-    () =>
-      $("previewModal")
-        .classList
-        .add("hidden")
-  );
-
-  $("previewModal").addEventListener(
-    "click",
-    e => {
-
-      if (
-        e.target ===
-        $("previewModal")
-      ) {
-
-        $("previewModal")
-          .classList
-          .add("hidden");
-
-      }
-
-    }
-  );
-
-  $("btnAnalisa").addEventListener(
-    "click",
-    () => {
-
-      const result =
-        OverstokEngine.calculate(
-
-          $("stokBulan1").value,
-
-          $("stokBulan2").value,
-
-          $("targetAgustus").value,
-
-          $("faktorOverstok").value
-
-        );
-
-      $("stokBulan1Result").textContent =
-        rupiah(result.bulan1);
-
-      $("stokBulan2Result").textContent =
-        rupiah(result.bulan2);
-
-      $("totalOmset").textContent =
-        rupiah(result.total);
-
-      $("potensiStok").textContent =
-        rupiah(result.potensi);
-
-      $("targetResult").textContent =
-        rupiah(result.target);
-
-      $("selisihResult").textContent =
-        rupiah(
-          Math.abs(
-            result.selisih
-          )
-        );
-
-      const box =
-        $("statusOverstok");
-
-      box.className =
-        `status-result ${
-          result.status === "OVERSTOK"
-            ? "overstok"
-            : "aman"
-        }`;
-
-      box.textContent =
-        result.status === "OVERSTOK"
-
-          ? `⚠️ OVERSTOK — Potensi ${rupiah(result.potensi)} lebih besar dari Target Sekarang sebesar ${rupiah(result.selisih)}.`
-
-          : `✓ AMAN — Potensi ${rupiah(result.potensi)} tidak lebih besar dari Target Sekarang.`;
-
-      $("overstokResult")
-        .classList
-        .remove("hidden");
-
-    }
-  );
-
-  $("btnFilterQty").addEventListener(
-    "click",
-    () => {
-
-      const data =
-        OverstokEngine
-          .parseBulk(
-            $("bulkData").value
-          )
-          .filter(
-            x => x.qty > 6
-          );
-
-      $("qtyAnalysisResult").innerHTML =
-
-        data.length
-
-          ? `
-
-            <table class="data-table">
-
-              <thead>
-
-                <tr>
-                  <th>Kode SAP</th>
-                  <th>Nama</th>
-                  <th>Qty</th>
-                </tr>
-
-              </thead>
-
-              <tbody>
-
-                ${
-                  data.map(x => `
-
-                    <tr>
-
-                      <td>
-                        ${escapeHtml(x.sap)}
-                      </td>
-
-                      <td>
-                        ${escapeHtml(x.name)}
-                      </td>
-
-                      <td>
-                        ${x.qty}
-                      </td>
-
-                    </tr>
-
-                  `).join("")
-                }
-
-              </tbody>
-
-            </table>
-
-          `
-
-          : "<p class='muted'>Tidak ada data dengan Qty lebih dari 6.</p>";
-
-    }
-  );
-
-  function renderHistory() {
-
-    const data =
-      StorageEngine.get();
-
-    const box =
-      $("historyList");
-
-    box.innerHTML =
-
-      data.length
-
-        ? data.map(x => `
-
-            <div class="history-item">
-
-              <strong>
-                ${escapeHtml(x.template)}
-              </strong>
-
-              <span>
-                ${escapeHtml(x.date)}
-                · ${x.files.length} file SO
-                · ${x.matched} SKU cocok
-                · ${x.notFound} tidak ditemukan
-              </span>
-
-            </div>
-
-          `).join("")
-
-        : `
-          <div class="panel">
-            <p class="muted">
-              Belum ada riwayat proses.
-            </p>
-          </div>
-        `;
-
+  setProgress(60,"Menulis hasil ke kolom Qty template...");
+  const perBrand={},byMethod={ODOO:0,SAP:0,NAME:0};
+  for(const [key,v] of totals){
+    setQtyCell(wb.Sheets[v.sheet],v.row,v.qtyCol,v.qty);
+    perBrand[v.sheet]=(perBrand[v.sheet]||0)+1;
+    byMethod[v.matchedBy]=(byMethod[v.matchedBy]||0)+1;
   }
+  setProgress(90,"Validasi hasil...");
+  const brandRows=Object.entries(perBrand).map(([b,c])=>`<tr><td>${b}</td><td>${c.toLocaleString("id-ID")}</td></tr>`).join("");
+  App.lastResult={wb,unmatched,matched:totals.size,byMethod};
+  $("#resultInfo").innerHTML=`<b>Selesai.</b> ${totals.size.toLocaleString("id-ID")} item cocok, ${unmatched.length.toLocaleString("id-ID")} tidak ditemukan.
+  <p class="muted">Deteksi file: Odoo ${detectedOdoo} sheet, SAP ${detectedSap} sheet. Metode cocok: Odoo ${byMethod.ODOO}, SAP ${byMethod.SAP}, Nama ${byMethod.NAME}.</p>
+  <div class="tablewrap"><table><thead><tr><th>Sheet / Brand</th><th>Item terisi</th></tr></thead><tbody>${brandRows||"<tr><td colspan=2>Tidak ada.</td></tr>"}</tbody></table></div>`;
+  $("#downloadBtn").disabled=false;$("#missingBtn").disabled=false;
+  App.history.unshift({date:new Date().toLocaleString("id-ID"),files:App.soFiles.length,matched:totals.size,missing:unmatched.length});
+  App.history=App.history.slice(0,30);localStorage.setItem("rsp_v9_history",JSON.stringify(App.history));
+  setProgress(100,"Selesai.");
+}
+function downloadWorkbook(){
+  if(App.lastResult)XLSX.writeFile(App.lastResult.wb,`Hasil_Komper_SO_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+function downloadMissing(){
+  const rows=App.lastResult?.unmatched||[];
+  if(!rows.length)return toast("Tidak ada SKU yang tidak ditemukan.");
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),"SKU_Tidak_Ditemukan");
+  XLSX.writeFile(wb,`SKU_Tidak_Ditemukan_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+function bindReconcile(){
+  $("#templateInput").onchange=e=>{App.template=e.target.files[0];$("#templateInfo").innerHTML=`✓ ${App.template.name} — ${(App.template.size/1024).toFixed(1)} KB`};
+  $("#soInput").onchange=e=>{App.soFiles=[...e.target.files];$("#soInfo").innerHTML=`✓ ${App.soFiles.length} file dipilih.`};
+  $("#processBtn").onclick=()=>reconcile().catch(e=>{console.error(e);toast("Gagal: "+e.message);setProgress(0,"Terjadi error.")});
+  $("#downloadBtn").onclick=downloadWorkbook;
+  $("#missingBtn").onclick=downloadMissing;
+  $("#clearBtn").onclick=()=>{App.template=null;App.soFiles=[];App.lastResult=null;page("reconcile")};
+}
 
-  $("btnClearHistory").addEventListener(
-    "click",
-    () => {
+render.overstock=()=>{
+$("#content").innerHTML=`
+<div class="card"><h3>Analisa Overstok per Brand</h3><p class="muted">Input manual sesuai kebutuhan. Faktor dapat dipilih 1,5 sampai 2,0.</p>
+<div id="brands"></div><div class="row"><button class="btn secondary" id="addBrand">+ Tambah Brand</button><button class="btn" id="calcBrands">Hitung Semua</button></div></div>
+<div class="card" style="margin-top:14px"><h3>Hasil</h3><div id="overResult" class="tablewrap"></div></div>`;
+let n=0; const add=()=>{n++;$("#brands").insertAdjacentHTML("beforeend",`<div class="brandrow card" style="padding:10px"><div class="field brandname"><label>Brand</label><input data-k="brand" placeholder="Contoh: Wardah"></div><div class="field"><label>Stok Bulan 1</label><input data-k="a" type="number" min="0" value="0"></div><div class="field"><label>Stok Bulan 2</label><input data-k="b" type="number" min="0" value="0"></div><div class="field"><label>Faktor</label><select data-k="f"><option>1.5</option><option>1.6</option><option>1.7</option><option>1.8</option><option>1.9</option><option>2.0</option></select></div><div class="field"><label>Target Sekarang</label><input data-k="t" type="number" min="0" value="0"></div></div>`)};add();$("#addBrand").onclick=add;$("#calcBrands").onclick=()=>{
+ const out=[...document.querySelectorAll("#brands .brandrow")].map(x=>{const v=k=>x.querySelector(`[data-k="${k}"]`).value;const a=+v("a"),b=+v("b"),f=+v("f"),t=+v("t"),pot=(a+b)*f;return {brand:v("brand")||"-",a,b,f,pot,t,diff:pot-t,status:pot>t?"OVERSTOK":"NORMAL"}});
+ $("#overResult").innerHTML=`<table><thead><tr><th>Brand</th><th>Bulan 1</th><th>Bulan 2</th><th>Faktor</th><th>Potensi</th><th>Target</th><th>Selisih</th><th>Status</th></tr></thead><tbody>${out.map(x=>`<tr><td>${x.brand}</td><td>${money(x.a)}</td><td>${money(x.b)}</td><td>${x.f}×</td><td>${money(x.pot)}</td><td>${money(x.t)}</td><td>${money(x.diff)}</td><td class="${x.status==="OVERSTOK"?"bad":"ok"}">${x.status}</td></tr>`).join("")}</tbody></table>`;
+};
+};
 
-      if (
-        confirm(
-          "Hapus semua riwayat?"
-        )
-      ) {
+render.history=()=>{$("#content").innerHTML=`<div class="card"><h3>Riwayat</h3><div class="tablewrap"><table><thead><tr><th>Tanggal</th><th>File SO</th><th>Match</th><th>Tidak ditemukan</th></tr></thead><tbody>${App.history.map(x=>`<tr><td>${x.date}</td><td>${x.files}</td><td>${x.matched}</td><td>${x.missing}</td></tr>`).join("")||"<tr><td colspan=4>Belum ada riwayat.</td></tr>"}</tbody></table></div></div>`};
+render.about=()=>$("#content").innerHTML=`<div class="card"><h3>Reconcile Stock Pro V9</h3><p>Clean rebuild berdasarkan kebutuhan aplikasi dan bug versi sebelumnya.</p><ul><li>Template asli tidak diubah; hasil ditulis ke salinan workbook di browser.</li><li>SO dapat banyak file.</li><li>Kolom dibaca berdasarkan header.</li><li>Kode SAP numerik dinormalisasi agar 0003184 dan 3184 dapat dicocokkan.</li><li>Overstok per brand dengan faktor 1,5–2,0.</li><li>Tidak ada upload data ke server; proses dilakukan di browser.</li></ul></div>`;
 
-        StorageEngine.clear();
-
-        renderHistory();
-
-      }
-
-    }
-  );
-
-  renderHistory();
-
-  function rupiah(number) {
-
-    return new Intl.NumberFormat(
-      "id-ID",
-      {
-        style: "currency",
-        currency: "IDR",
-        maximumFractionDigits: 0
-      }
-    ).format(
-      Number(number) || 0
-    );
-
-  }
-
-  function escapeHtml(value) {
-
-    return String(
-      value ?? ""
-    ).replace(
-      /[&<>"']/g,
-      match =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#039;"
-        }[match])
-    );
-
-  }
-
-})();
+$("#menuBtn").onclick=()=>$("#sidebar").classList.toggle("open");
+document.querySelectorAll(".sidebar button").forEach(b=>b.onclick=()=>page(b.dataset.page));
+page("home");
