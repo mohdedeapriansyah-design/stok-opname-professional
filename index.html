@@ -1,26 +1,158 @@
 <!doctype html>
 <html lang="id">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Reconcile Stock Pro V9.1</title>
-<link rel="stylesheet" href="style.css">
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Reconcile Stock Pro V10</title>
+  <meta name="theme-color" content="#0b63ce">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-<header class="topbar">
-  <button id="menuBtn" class="iconbtn">☰</button>
-  <div><b>📊 Reconcile Stock Pro</b><small>Stock Opname & Stock Analysis</small></div>
-</header>
-<aside id="sidebar" class="sidebar">
-  <button data-page="home">⌂ Beranda</button>
-  <button data-page="reconcile">↻ Reconcile Otomatis</button>
-  <button data-page="overstock">◈ Analisa Overstok</button>
-  <button data-page="history">▣ Riwayat Proses</button>
-  <button data-page="about">ⓘ Tentang Aplikasi</button>
-</aside>
-<main id="app"></main>
-<div id="toast" class="toast"></div>
-<script src="app.js"></script>
+  <header class="topbar">
+    <button id="menuBtn" class="icon-btn" aria-label="Buka menu">☰</button>
+    <div class="brand">
+      <div class="brand-title">📊 Reconcile Stock Pro</div>
+      <div class="brand-sub">Stock Opname &amp; Stock Analysis</div>
+    </div>
+  </header>
+
+  <div id="drawerBackdrop" class="backdrop hidden"></div>
+  <aside id="drawer" class="drawer">
+    <div class="drawer-head">
+      <strong>Menu Aplikasi</strong>
+      <button id="closeMenu" class="icon-btn">×</button>
+    </div>
+    <button class="nav-item active" data-section="reconcile">↻ Reconcile Otomatis</button>
+    <button class="nav-item" data-section="overstock">▥ Analisa Overstok</button>
+    <button class="nav-item" data-section="history">◷ Riwayat Proses</button>
+    <button class="nav-item" data-section="about">ⓘ Tentang Aplikasi</button>
+  </aside>
+
+  <main class="container">
+    <section id="section-reconcile" class="section">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">RECONCILE AUTOMATION</div>
+          <h1>Rekonsiliasi Stock Opname</h1>
+          <p>Masukkan template Komper dan file SO. Sistem mendeteksi header Odoo/SAP/Qty secara otomatis.</p>
+        </div>
+        <div class="hero-badge">V10</div>
+      </div>
+
+      <div class="step-grid">
+        <article class="upload-card">
+          <div class="step-num">01</div>
+          <h2>Template Komper</h2>
+          <p class="muted">File master yang menjadi dasar hasil akhir.</p>
+          <label class="dropzone" for="templateInput">
+            <span class="drop-icon">📄</span>
+            <strong>Pilih file template</strong>
+            <small>XLSX / XLS / CSV</small>
+          </label>
+          <input id="templateInput" type="file" accept=".xlsx,.xls,.csv" hidden>
+          <div id="templateInfo" class="file-info empty">Belum ada template</div>
+        </article>
+
+        <article class="upload-card">
+          <div class="step-num">02</div>
+          <h2>File Hasil SO</h2>
+          <p class="muted">Bisa memilih banyak file dari berbagai brand.</p>
+          <label class="dropzone" for="soInput">
+            <span class="drop-icon">📚</span>
+            <strong>Pilih banyak file SO</strong>
+            <small>XLSX / XLS / CSV</small>
+          </label>
+          <input id="soInput" type="file" accept=".xlsx,.xls,.csv" multiple hidden>
+          <div id="soInfo" class="file-info empty">Belum ada file SO</div>
+        </article>
+      </div>
+
+      <article class="process-card">
+        <div class="card-head">
+          <div>
+            <div class="eyebrow">03 · ENGINE</div>
+            <h2>Proses Rekonsiliasi</h2>
+          </div>
+          <span id="engineState" class="status-pill neutral">Siap</span>
+        </div>
+        <div class="progress"><div id="progressBar"></div></div>
+        <div id="statusText" class="status-text">Upload template dan file SO untuk memulai.</div>
+        <div class="action-row">
+          <button id="processBtn" class="btn primary">Proses Rekonsiliasi</button>
+          <button id="clearBtn" class="btn secondary">Bersihkan</button>
+        </div>
+      </article>
+
+      <article class="result-card">
+        <div class="card-head">
+          <div>
+            <div class="eyebrow">04 · HASIL</div>
+            <h2>Hasil Rekonsiliasi</h2>
+          </div>
+          <span id="resultState" class="status-pill neutral">Belum diproses</span>
+        </div>
+
+        <div id="summaryGrid" class="summary-grid">
+          <div><span>Total baris SO</span><strong id="totalSo">0</strong></div>
+          <div><span>SKU cocok</span><strong id="matched">0</strong></div>
+          <div><span>Tidak ditemukan</span><strong id="notFound">0</strong></div>
+          <div><span>Qty dimasukkan</span><strong id="qtyWritten">0</strong></div>
+        </div>
+
+        <div class="action-row">
+          <button id="downloadBtn" class="btn primary" disabled>⬇ Download Hasil</button>
+          <button id="downloadMissingBtn" class="btn secondary" disabled>SKU Tidak Ditemukan</button>
+        </div>
+      </article>
+
+      <article class="info-card">
+        <h2>Deteksi Header Otomatis</h2>
+        <div class="chip-list">
+          <span>Odoo</span><span>SAP</span><span>Kode Item</span><span>Product Name</span><span>Qty Fix</span><span>Quantity</span>
+        </div>
+        <p>Sistem mencari nama header tanpa bergantung pada posisi kolom. Jika Odoo tersedia, Odoo diprioritaskan. SAP menjadi fallback.</p>
+      </article>
+    </section>
+
+    <section id="section-overstock" class="section hidden">
+      <div class="hero compact">
+        <div><div class="eyebrow">OVERSTOCK ANALYSIS</div><h1>Analisa Overstok</h1><p>Input nominal stok per brand lalu bandingkan dengan target sekarang.</p></div>
+      </div>
+      <article class="form-card">
+        <div class="form-grid">
+          <label>Brand<input id="ovBrand" type="text" placeholder="Contoh: Wardah"></label>
+          <label>Stok Bulan 1<input id="ovMonth1" type="number" min="0" step="any" placeholder="0"></label>
+          <label>Stok Bulan 2<input id="ovMonth2" type="number" min="0" step="any" placeholder="0"></label>
+          <label>Faktor<input id="ovFactor" type="number" min="1.5" max="2" step="0.1" value="1.5"></label>
+          <label>Target Sekarang<input id="ovTarget" type="number" min="0" step="any" placeholder="0"></label>
+        </div>
+        <button id="calcOverstock" class="btn primary">Hitung Overstok</button>
+        <div id="ovResult" class="overstock-result">Belum dihitung.</div>
+      </article>
+    </section>
+
+    <section id="section-history" class="section hidden">
+      <div class="hero compact"><div><div class="eyebrow">HISTORY</div><h1>Riwayat Proses</h1><p>Riwayat ringkas tersimpan di perangkat ini.</p></div></div>
+      <article class="table-card"><div id="historyList" class="history-list"></div></article>
+    </section>
+
+    <section id="section-about" class="section hidden">
+      <div class="hero compact"><div><div class="eyebrow">ABOUT</div><h1>Tentang Aplikasi</h1><p>Reconcile Stock Pro V10 — clean rebuild untuk Android dan GitHub Pages.</p></div></div>
+      <article class="info-card">
+        <h2>Prinsip V10</h2>
+        <ul>
+          <li>Deteksi header otomatis, tidak bergantung pada posisi kolom.</li>
+          <li>Odoo diprioritaskan; SAP digunakan sebagai fallback.</li>
+          <li>Hasil ditulis ke salinan template, bukan mengubah file asli.</li>
+          <li>SKU yang tidak ditemukan tidak dipaksakan masuk.</li>
+          <li>UI ringan dan responsif untuk layar Android.</li>
+        </ul>
+      </article>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
 </body>
 </html>

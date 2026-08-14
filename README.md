@@ -1,14 +1,21 @@
-# Reconcile Stock Pro V9
-Clean rebuild untuk GitHub Pages / Android.
+# Reconcile Stock Pro V10
+
+Clean rebuild untuk GitHub Pages dan Android.
 
 ## Fitur
-- Beranda, Reconcile Otomatis, Analisa Overstok, Riwayat, Tentang.
-- Upload Template Komper.
-- Upload banyak file SO.
-- Pembacaan header `productSapCode/Kode SAP`, `ProductName`, `ProductCode`, `qtyFix`.
-- Normalisasi kode SAP numerik dengan menghapus leading zero.
-- Hasil SO ditulis ke salinan template, bukan file template asli.
-- Overstok manual per brand: `(Bulan 1 + Bulan 2) × Faktor`, faktor 1,5–2,0, dibandingkan Target Sekarang.
+- Template Komper sebagai dasar hasil.
+- Banyak file SO.
+- Deteksi header otomatis: Odoo, SAP, Kode Item, Product Name, Qty.
+- Prioritas Odoo, fallback SAP, lalu Kode Item.
+- Fallback SAP -> Kode Item hanya jika kecocokan suffix unik.
+- Hasil ditulis ke salinan template.
+- Download Hasil XLSX.
+- Download SKU Tidak Ditemukan.
+- Analisa Overstok: (Bulan 1 + Bulan 2) x faktor 1,5–2,0 dibanding Target Sekarang.
+- Riwayat lokal di browser.
+- UI responsif Android.
 
-## Catatan
-V9 adalah fondasi baru. Jalur produksi masih dapat dioptimalkan lagi untuk template mendekati batas 1.048.576 baris; tahap berikutnya sebaiknya mengganti scan template penuh dengan indeks/streaming yang benar-benar terarah.
+## GitHub Pages
+Upload `index.html`, `style.css`, dan `app.js` ke root repository. Tidak memerlukan manifest.json.
+
+Catatan: aplikasi menggunakan SheetJS dari CDN untuk membaca/menulis spreadsheet.
