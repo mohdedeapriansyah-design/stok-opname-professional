@@ -280,4 +280,4 @@ render.about=()=>$("#content").innerHTML=`<div class="card"><h3>Reconcile Stock 
 $("#menuBtn").onclick=()=>$("#sidebar").classList.toggle("open");
 document.querySelectorAll(".sidebar button").forEach(b=>b.onclick=()=>page(b.dataset.page));
 page("home");
-                      
+  
