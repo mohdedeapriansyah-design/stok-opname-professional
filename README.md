@@ -18,3 +18,12 @@ Versi perbaikan dari V10 untuk GitHub Pages / Android.
 ## V10.2
 - Explicit `HASIL SO` destination; `qtyFix` is source only.
 - Uses actual worksheet cell ranges to avoid scanning declared million-row ranges.
+
+
+## V10.3 Freeze Fix
+Parsing and XLSX generation are moved to `reconcile-worker.js` Web Worker so the Android UI does not freeze during reconcile/download preparation. The main thread only handles UI and browser download.
+
+
+V10.5: large-sheet optimization. Worksheet ranges are trimmed to meaningful cells before row iteration to avoid accidental 1,048,576-row scans on Android.
+
+V10.6 Performance: avoids million-row nested scans by enumerating existing worksheet cells only.
