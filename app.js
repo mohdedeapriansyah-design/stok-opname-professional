@@ -222,15 +222,37 @@ async function reconcile(){
   App.history=App.history.slice(0,30);localStorage.setItem("rsp_v9_history",JSON.stringify(App.history));
   setProgress(100,"Selesai.");
 }
+function saveXlsxBrowser(wb, filename){
+  try{
+    const data=XLSX.write(wb,{bookType:"xlsx",type:"array",compression:true});
+    const blob=new Blob([data],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=filename;
+    a.style.display="none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},1500);
+    toast("File sedang diunduh: "+filename);
+    return true;
+  }catch(err){
+    console.error("Browser download error:",err);
+    toast("Download gagal: "+err.message);
+    return false;
+  }
+}
 function downloadWorkbook(){
-  if(App.lastResult)XLSX.writeFile(App.lastResult.wb,`Hasil_Komper_SO_${new Date().toISOString().slice(0,10)}.xlsx`);
+  if(!App.lastResult?.wb)return toast("Hasil belum tersedia. Proses rekonsiliasi dulu.");
+  const name=`Hasil_Komper_SO_${new Date().toISOString().slice(0,10)}.xlsx`;
+  saveXlsxBrowser(App.lastResult.wb,name);
 }
 function downloadMissing(){
   const rows=App.lastResult?.unmatched||[];
   if(!rows.length)return toast("Tidak ada SKU yang tidak ditemukan.");
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),"SKU_Tidak_Ditemukan");
-  XLSX.writeFile(wb,`SKU_Tidak_Ditemukan_${new Date().toISOString().slice(0,10)}.xlsx`);
+  saveXlsxBrowser(wb,`SKU_Tidak_Ditemukan_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 function bindReconcile(){
   $("#templateInput").onchange=e=>{App.template=e.target.files[0];$("#templateInfo").innerHTML=`✓ ${App.template.name} — ${(App.template.size/1024).toFixed(1)} KB`};
@@ -258,4 +280,4 @@ render.about=()=>$("#content").innerHTML=`<div class="card"><h3>Reconcile Stock 
 $("#menuBtn").onclick=()=>$("#sidebar").classList.toggle("open");
 document.querySelectorAll(".sidebar button").forEach(b=>b.onclick=()=>page(b.dataset.page));
 page("home");
-              
+                      
